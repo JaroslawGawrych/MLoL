@@ -1,7 +1,6 @@
 import requests
 import os
 from enum import Enum
-import pandas as pd
 from typing import List, Dict
 import json
 
@@ -35,7 +34,7 @@ def get_puuid(region: Puuid_region, gameName: str, tagLine: str) -> str|None:
         return None
 
 def get_match_ids(region: Match_region, type: Match_type, puuid: str, start: int, count: int, limit: int, match_ids: List[str]) -> List[str]:
-    if(start < limit):
+    if(len(match_ids)+count < limit):
         url = f'https://{region.name}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?type={type.name.lower()}&start={start}&count={count}&api_key={RIOT_KEY}'
         response = requests.get(url)
         if response.status_code == 200:
@@ -58,16 +57,17 @@ def get_match_results(region: Match_region, match_ids: List[str], puuid: str) ->
                     match_results.append(participant)
         else:
             print('Error:', response.text)
+            return match_results
     return match_results
 
 def save_raw_match_data(match_results: List[Dict]):
     output_dir = "processed_data"
     os.makedirs(output_dir, exist_ok=True)
-    with open(os.path.join(output_dir, "raw_match_data.json"), 'w') as fp:
+    with open(os.path.join(output_dir, "raw_matches_data.json"), 'w') as fp:
         json.dump(match_results, fp, indent=4)
 
 if __name__ == '__main__':
-    puuid = get_puuid(Puuid_region.EUROPE, 'sillyme', '2137')
-    match_ids = get_match_ids(Match_region.EUROPE, Match_type.RANKED, puuid, 0, 1, 1, [])
-    match_results = get_match_results(Match_region.EUROPE, match_ids, puuid)
-    save_raw_match_data(match_results)
+    puuid = get_puuid(region=Puuid_region.EUROPE, gameName='julusia42069', tagLine='eune')
+    match_ids = get_match_ids(region=Match_region.EUROPE, type=Match_type.RANKED, puuid=puuid, start=0, count=20, limit=100, match_ids=[])
+    match_results = get_match_results(region=Match_region.EUROPE, match_ids=match_ids, puuid=puuid)
+    save_raw_match_data(match_results=match_results)
