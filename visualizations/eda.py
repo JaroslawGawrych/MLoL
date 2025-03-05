@@ -16,7 +16,7 @@ def eda(file_path: str) -> None:
     profile_report = ProfileReport(df)
 
     output_dir = 'visualizations'
-    file_path = os.path.join(output_dir, f'{file_name}.html')
+    file_path = os.path.join(output_dir, f'{file_name}_eda.html')
     profile_report.to_file(file_path)
 
 if __name__ == '__main__':
