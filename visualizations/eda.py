@@ -9,5 +9,5 @@ def eda():
     file_path = os.path.join(directory, 'EDA.html')
     profile.to_file(file_path)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     eda()
