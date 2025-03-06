@@ -170,5 +170,4 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-champion_data.csv
 processed_data
