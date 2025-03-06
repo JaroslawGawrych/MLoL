@@ -61,7 +61,7 @@ def get_match_results(region: Match_region, match_ids: List[str], puuid: str) ->
     return match_results
 
 def save_raw_match_data(match_results: List[Dict]):
-    output_dir = "processed_data"
+    output_dir = "data"
     os.makedirs(output_dir, exist_ok=True)
     with open(os.path.join(output_dir, "raw_matches_data.json"), 'w') as fp:
         json.dump(match_results, fp, indent=4)

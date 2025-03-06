@@ -1,9 +1,9 @@
 import pandas as pd
 import os
-import numpy as np
+import utils
 
 def prepare():
-    df = pd.read_json('processed_data/raw_matches_data.json')
+    df = pd.read_json('data/raw_matches_data.json')
     df.drop(columns=[
 
         # exclusion of ping usage data
@@ -33,6 +33,8 @@ def prepare():
         'item5',
         'item6',
         'consumablesPurchased',
+        'goldSpent',
+        'itemsPurchased',
         
         # exclusion of fun data 
         'largestCriticalStrike',
@@ -49,6 +51,8 @@ def prepare():
 
         # exclusion of team data
         'teamId',
+        'turretsLost',
+        'nexusLost',
         
         # exclusion of ambigous data
         'playerSubteamId',
@@ -68,6 +72,7 @@ def prepare():
         'perks',
         'role',
         'subteamPlacement',
+        'eligibleForProgression',
         'placement',
 
         # exclusion of arena exclusive data
@@ -94,8 +99,19 @@ def prepare():
         'summoner1Id',
         'summoner2Id',
         'summoner1Casts',
-        'summoner2Casts'
+        'summoner2Casts',
         
+        # exclusion of categorized damage data
+        'magicDamageDealt',
+        'magicDamageDealtToChampions',
+        'magicDamageTaken',
+        'physicalDamageDealt',
+        'physicalDamageDealtToChampions',
+        'physicalDamageTaken',
+        'trueDamageDealt',
+        'trueDamageDealtToChampions',
+        'trueDamageTaken'
+
     ], inplace=True)
 
     '''
@@ -136,11 +152,34 @@ def prepare():
         # exclusion of fun data
         'challenges_blastConeOppositeOpponentCount',
         'challenges_dancedWithRiftHerald',
-        'challenges_dodgeSkillShotsSmallWindow',
         'challenges_doubleAces',
         'challenges_quickCleanse',
         'challenges_fistBumpParticipation',
-        
+        'challenges_elderDragonKillsWithOpposingSoul',
+        'challenges_elderDragonMultikills',
+        'challenges_fullTeamTakedown',
+        'challenges_mejaisFullStackInTime',
+        'challenges_multiTurretRiftHeraldCount',
+        'challenges_multikillsAfterAggressiveFlash',
+        'challenges_outerTurretExecutesBefore10Minutes',
+        'challenges_shortestTimeToAceFromFirstTakedown',
+        'challenges_takedownsInAlcove',
+        'challenges_takedownsInEnemyFountain',
+        'challenges_twentyMinionsIn3SecondsCount',
+
+
+        # exclusion of champion unrelated data
+        'challenges_takedownsAfterGainingLevelAdvantage',
+        'challenges_skillshotsDodged',
+        'challenges_skillshotsHit',
+        'challenges_landSkillShotsEarlyGame',
+        'challenges_dodgeSkillShotsSmallWindow',
+        'challenges_multiKillOneSpell',
+        'challenges_epicMonsterKillsWithin30SecondsOfSpawn',
+
+        # exclusion of high correlation data
+        'challenges_epicMonsterStolenWithoutSmite',
+
         # exclusion of aram specific data
         'challenges_killsOnRecentlyHealedByAramPack',
         'challenges_poroExplosions',
@@ -149,13 +188,14 @@ def prepare():
         # exclusion of team data
         'challenges_teamBaronKills',
         'challenges_teamElderDragonKills',
-        'challenges_teamRiftHeraldKills'
+        'challenges_teamRiftHeraldKills',
+        'challenges_flawlessAces',
+        'challenges_lostAnInhibitor'
 
     ], inplace=True)
     df = df.groupby(['championName']).mean().reset_index()
-    with pd.option_context('display.max_rows', None, 'display.max_columns', None):
-        print(df.T)
-    output_dir = "processed_data"
+    utils.print_df(df)
+    output_dir = "data"
     os.makedirs(output_dir, exist_ok=True)
     df.to_csv(os.path.join(output_dir, "prepared_matches_data.csv"), index=False)
 

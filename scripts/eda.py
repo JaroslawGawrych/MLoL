@@ -16,9 +16,10 @@ def eda(file_path: str) -> None:
     profile_report = ProfileReport(df)
 
     output_dir = 'visualizations'
+    os.makedirs(output_dir, exist_ok=True)
     file_path = os.path.join(output_dir, f'{file_name}_eda.html')
     profile_report.to_file(file_path)
 
 if __name__ == '__main__':
-    eda(file_path='processed_data/champion_data.csv')
-    eda(file_path='processed_data/prepared_matches_data.csv')
+    # eda(file_path='data/champion_data.csv')
+    eda(file_path='data/prepared_matches_data.csv')
