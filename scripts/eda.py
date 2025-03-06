@@ -20,5 +20,5 @@ def eda(file_path: str) -> None:
     profile_report.to_file(file_path)
 
 if __name__ == '__main__':
-    # eda(file_path='processed_data/champion_data.csv')
+    eda(file_path='processed_data/champion_data.csv')
     eda(file_path='processed_data/prepared_matches_data.csv')
