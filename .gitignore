@@ -171,4 +171,4 @@ cython_debug/
 .pypirc
 
 champion_data.csv
-raw_match_data
+processed_data
