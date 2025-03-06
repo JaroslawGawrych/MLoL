@@ -34,7 +34,7 @@ def get_puuid(region: Puuid_region, gameName: str, tagLine: str) -> str|None:
         return None
 
 def get_match_ids(region: Match_region, type: Match_type, puuid: str, start: int, count: int, limit: int, match_ids: List[str]) -> List[str]:
-    if(len(match_ids)+count < limit):
+    if(len(match_ids)+count <= limit):
         url = f'https://{region.name}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?type={type.name.lower()}&start={start}&count={count}&api_key={RIOT_KEY}'
         response = requests.get(url)
         if response.status_code == 200:
@@ -68,6 +68,6 @@ def save_raw_match_data(match_results: List[Dict]):
 
 if __name__ == '__main__':
     puuid = get_puuid(region=Puuid_region.EUROPE, gameName='julusia42069', tagLine='eune')
-    match_ids = get_match_ids(region=Match_region.EUROPE, type=Match_type.RANKED, puuid=puuid, start=0, count=20, limit=100, match_ids=[])
+    match_ids = get_match_ids(region=Match_region.EUROPE, type=Match_type.RANKED, puuid=puuid, start=0, count=20, limit=40, match_ids=[])
     match_results = get_match_results(region=Match_region.EUROPE, match_ids=match_ids, puuid=puuid)
     save_raw_match_data(match_results=match_results)
