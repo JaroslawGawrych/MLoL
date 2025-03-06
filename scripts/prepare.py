@@ -6,7 +6,7 @@ def prepare():
     df = pd.read_json('data/raw_matches_data.json')
     df.drop(columns=[
 
-        # exclusion of ping usage data
+        # ping usage data
         'allInPings',
         'assistMePings',
         'basicPings',
@@ -20,11 +20,12 @@ def prepare():
         'pushPings',
         'dangerPings',
         'retreatPings',
+        'visionClearedPings',
 
-        # exclusion of kayn exclusive data
+        # kayn exclusive data
         'championTransform', 
 
-        # exclusion of item data
+        # item data
         'item0',
         'item1',
         'item2',
@@ -35,11 +36,13 @@ def prepare():
         'consumablesPurchased',
         'goldSpent',
         'itemsPurchased',
+        'visionWardsBoughtInGame',
         
-        # exclusion of fun data 
+        # fun data 
         'largestCriticalStrike',
+        'totalDamageDealt',
 
-        # exclusion of player data
+        # player data
         'profileIcon',
         'puuid',
         'riotIdGameName',
@@ -49,12 +52,12 @@ def prepare():
         'participantId',
         'summonerId',
 
-        # exclusion of team data
+        # team data
         'teamId',
         'turretsLost',
         'nexusLost',
         
-        # exclusion of ambigous data
+        # ambigous data
         'playerSubteamId',
         'missions',
         'PlayerScore0',
@@ -75,7 +78,7 @@ def prepare():
         'eligibleForProgression',
         'placement',
 
-        # exclusion of arena exclusive data
+        # arena exclusive data
         'playerAugment1',
         'playerAugment2',
         'playerAugment3',
@@ -83,25 +86,27 @@ def prepare():
         'playerAugment5',
         'playerAugment6',
         
-        # exclusion of high correlation data
+        # high correlation data
         'champExperience',
         'championId',
         'individualPosition',
         'teamPosition',
+        'damageDealtToTurrets',
+        'damageDealtToObjectives',
         
-        # exclusion of ability usage data
+        # ability usage data
         'spell1Casts',
         'spell2Casts',
         'spell3Casts',
         'spell4Casts',
         
-        # exclusion of summoner spell data
+        # summoner spell data
         'summoner1Id',
         'summoner2Id',
         'summoner1Casts',
         'summoner2Casts',
         
-        # exclusion of categorized damage data
+        # categorized damage data
         'magicDamageDealt',
         'magicDamageDealtToChampions',
         'magicDamageTaken',
@@ -127,7 +132,7 @@ def prepare():
     df = df.drop(columns=['challenges']).join(df_challenges)
     df.drop(columns=[
 
-        # exclusion of swarm exclusive data
+        # swarm exclusive data
         'challenges_SWARM_DefeatAatrox',
         'challenges_SWARM_DefeatBriar',
         'challenges_SWARM_DefeatMiniBosses',
@@ -139,17 +144,17 @@ def prepare():
         'challenges_SWARM_Survive15Min',
         'challenges_SWARM_WinWith5EvolvedWeapons',
 
-        # exclusion of item usage data
+        # item usage data
         'challenges_legendaryItemUsed',
 
-        # exclusion of map specific data
+        # map specific data
         'challenges_HealFromMapSources',
         'challenges_InfernalScalePickup',
 
-        # exclusion of ability usage data
+        # ability usage data
         'challenges_abilityUses',
 
-        # exclusion of fun data
+        # fun data
         'challenges_blastConeOppositeOpponentCount',
         'challenges_dancedWithRiftHerald',
         'challenges_doubleAces',
@@ -168,7 +173,7 @@ def prepare():
         'challenges_twentyMinionsIn3SecondsCount',
 
 
-        # exclusion of champion unrelated data
+        # champion unrelated data
         'challenges_takedownsAfterGainingLevelAdvantage',
         'challenges_skillshotsDodged',
         'challenges_skillshotsHit',
@@ -177,15 +182,15 @@ def prepare():
         'challenges_multiKillOneSpell',
         'challenges_epicMonsterKillsWithin30SecondsOfSpawn',
 
-        # exclusion of high correlation data
+        # high correlation data
         'challenges_epicMonsterStolenWithoutSmite',
 
-        # exclusion of aram specific data
+        # aram specific data
         'challenges_killsOnRecentlyHealedByAramPack',
         'challenges_poroExplosions',
         'challenges_snowballsHit',
         
-        # exclusion of team data
+        # team data
         'challenges_teamBaronKills',
         'challenges_teamElderDragonKills',
         'challenges_teamRiftHeraldKills',
