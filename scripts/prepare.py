@@ -1,205 +1,321 @@
 import pandas as pd
 import os
-import utils
+from utils import print_df
 
 def prepare():
+   
     df = pd.read_json('data/raw_matches_data.json')
+
+    df_challenges = pd.json_normalize(df['challenges']).add_prefix('')
+    df_challenges.rename(columns={
+    'killingSprees':'challenges_killingSprees',
+    'turretTakedowns':'challenges_turretTakedowns'
+    }, inplace=True)
+    df = df.drop(columns=['challenges']).join(df_challenges)
+
     df.drop(columns=[
 
-        # ping usage data
-        'allInPings',
-        'assistMePings',
-        'basicPings',
-        'commandPings',
-        'enemyMissingPings',
-        'enemyVisionPings',
-        'holdPings',
-        'getBackPings',
-        'needVisionPings',
-        'onMyWayPings',
-        'pushPings',
-        'dangerPings',
-        'retreatPings',
-        'visionClearedPings',
+        # not used
 
-        # kayn exclusive data
-        'championTransform', 
+            # ambigous
+            'playerSubteamId',
+            'objectivesStolenAssists', # how is it calculated?
+            'challenges_killingSprees',
+            'challenges_turretTakedowns',
+            'missions',
+            'unrealKills',
+            'PlayerScore0',
+            'PlayerScore1',
+            'PlayerScore2',
+            'PlayerScore3',
+            'PlayerScore4',
+            'PlayerScore5',
+            'PlayerScore6',
+            'PlayerScore7',
+            'PlayerScore8',
+            'PlayerScore9',
+            'PlayerScore10',
+            'PlayerScore11',
+            'perks',
+            'role',
+            'subteamPlacement',
+            'eligibleForProgression',
+            'placement',
 
-        # item data
-        'item0',
-        'item1',
-        'item2',
-        'item3',
-        'item4',
-        'item5',
-        'item6',
-        'consumablesPurchased',
-        'goldSpent',
-        'itemsPurchased',
-        'visionWardsBoughtInGame',
-        
-        # fun data 
-        'largestCriticalStrike',
-        'totalDamageDealt',
+            # aram/swarm/arena exclusive
+            'killsOnRecentlyHealedByAramPack',
+            'poroExplosions',
+            'snowballsHit',
+            'SWARM_DefeatAatrox',
+            'SWARM_DefeatBriar',
+            'SWARM_DefeatMiniBosses',
+            'SWARM_EvolveWeapon',
+            'SWARM_Have3Passives',
+            'SWARM_KillEnemy',
+            'SWARM_PickupGold',
+            'SWARM_ReachLevel50',
+            'SWARM_Survive15Min',
+            'SWARM_WinWith5EvolvedWeapons',
+            'playerAugment1',
+            'playerAugment2',
+            'playerAugment3',
+            'playerAugment4',
+            'playerAugment5',
+            'playerAugment6',
 
-        # player data
-        'profileIcon',
-        'puuid',
-        'riotIdGameName',
-        'riotIdTagline',
-        'summonerLevel',
-        'summonerName',
-        'participantId',
-        'summonerId',
+            # ping usage
+            'allInPings',
+            'assistMePings',
+            'basicPings',
+            'commandPings',
+            'enemyMissingPings',
+            'enemyVisionPings',
+            'holdPings',
+            'getBackPings',
+            'needVisionPings',
+            'onMyWayPings',
+            'pushPings',
+            'dangerPings',
+            'retreatPings',
+            'visionClearedPings',
 
-        # team data
-        'teamId',
-        'turretsLost',
-        'nexusLost',
-        
-        # ambigous data
-        'playerSubteamId',
-        'missions',
-        'PlayerScore0',
-        'PlayerScore1',
-        'PlayerScore2',
-        'PlayerScore3',
-        'PlayerScore4',
-        'PlayerScore5',
-        'PlayerScore6',
-        'PlayerScore7',
-        'PlayerScore8',
-        'PlayerScore9',
-        'PlayerScore10',
-        'PlayerScore11',
-        'perks',
-        'role',
-        'subteamPlacement',
-        'eligibleForProgression',
-        'placement',
+            # oddly specific / fun
+            'championTransform', # kayn exclusive
+            'dancedWithRiftHerald',
+            'elderDragonMultikills',
+            'getTakedownsInAllLanesEarlyJungleAsLaner',
+            'fullTeamTakedown',
+            'mejaisFullStackInTime',
+            'outerTurretExecutesBefore10Minutes',
+            'elderDragonKillsWithOpposingSoul',
+            'killedChampTookFullTeamDamageSurvived',        
+            'multiTurretRiftHeraldCount',
+            'multikillsAfterAggressiveFlash',
+            'takedownsInEnemyFountain',
+            'twentyMinionsIn3SecondsCount',
+            'epicMonsterStolenWithoutSmite',
+            'earliestElderDragon',
+            'earliestDragonTakedown',
+            'twoWardsOneSweeperCount',
+            'turretsTakenWithRiftHerald',
+            'tookLargeDamageSurvived',
+            'takedownOnFirstTurret',
+            'survivedThreeImmobilizesInFight',
+            'quickSoloKills',
+            'playedChampSelectPosition',
+            'perfectDragonSoulsTaken',
+            'quickFirstTurret',
+            'legendaryCount', # streak or items?
+            'highestWardKills',
+            'maxKillDeficit', # ?
+            'hadOpenNexus',
+            'timeCCingOthers', # ?
+            'soloTurretsLategame',
+            'firstTurretKilledTime',
+            'multiKillOneSpell',
+            'unseenRecalls',
+            'acesBefore15Minutes',
+            'alliedJungleMonsterKills',
+            'baronBuffGoldAdvantageOverThreshold',
+            'legendaryItemUsed',
+            '12AssistStreakCount',
+            'bountyGold', # earned?
+            'largestCriticalStrike',
+            'totalDamageDealt',
+            'fistBumpParticipation',
+            'largestMultiKill',
+            'killsUnderOwnTurret',
+            'killsOnOtherLanesEarlyJungleAsLaner',
+            'killsNearEnemyTurret',
+            'killsWithHelpFromEpicMonster',
+            'totalUnitsHealed',
+            'killingSprees',
+            'outnumberedKills',
+            'knockEnemyIntoTeamAndKill',
+            'perfectGame',
+            'survivedSingleDigitHpCount',
+            'outnumberedNexusKill',
 
-        # arena exclusive data
-        'playerAugment1',
-        'playerAugment2',
-        'playerAugment3',
-        'playerAugment4',
-        'playerAugment5',
-        'playerAugment6',
-        
-        # high correlation data
-        'champExperience',
-        'championId',
-        'individualPosition',
-        'teamPosition',
-        'damageDealtToTurrets',
-        'damageDealtToObjectives',
-        
-        # ability usage data
-        'spell1Casts',
-        'spell2Casts',
-        'spell3Casts',
-        'spell4Casts',
-        
-        # summoner spell data
-        'summoner1Id',
-        'summoner2Id',
-        'summoner1Casts',
-        'summoner2Casts',
-        
-        # categorized damage data
-        'magicDamageDealt',
-        'magicDamageDealtToChampions',
-        'magicDamageTaken',
-        'physicalDamageDealt',
-        'physicalDamageDealtToChampions',
-        'physicalDamageTaken',
-        'trueDamageDealt',
-        'trueDamageDealtToChampions',
-        'trueDamageTaken'
+            'largestKillingSpree',
+
+            # player
+            'profileIcon',
+            'puuid',
+            'riotIdGameName',
+            'riotIdTagline',
+            'summonerLevel',
+            'summonerName',
+            'participantId',
+            'summonerId',
+
+            # team
+            'teamId',
+            'turretsLost',
+            'nexusLost',
+            'inhibitorsLost',        
+            'doubleAces',
+            'shortestTimeToAceFromFirstTakedown',
+            'teamBaronKills',
+            'teamElderDragonKills',
+            'teamRiftHeraldKills',
+            'flawlessAces',
+            'lostAnInhibitor',
+            
+            # map specific
+            'HealFromMapSources',
+            'takedownsInAlcove',
+            'InfernalScalePickup',
+            'blastConeOppositeOpponentCount',
+
+            # item
+            'item0',
+            'item1',
+            'item2',
+            'item3',
+            'item4',
+            'item5',
+            'item6',
+            'fastestLegendary',
+            'consumablesPurchased',
+            'goldSpent',
+            'itemsPurchased',
+
+            # ability usage
+            'spell1Casts',
+            'spell2Casts',
+            'spell3Casts',
+            'spell4Casts',
+            'abilityUses',
+            
+            # summoner spells
+            'summoner1Id',
+            'summoner2Id',
+            'summoner1Casts',
+            'summoner2Casts',
+
+            # champion unrelated skill expression
+            'quickCleanse',
+            'takedownsAfterGainingLevelAdvantage',
+            'skillshotsDodged',
+            'skillshotsHit',
+            'landSkillShotsEarlyGame',
+            'dodgeSkillShotsSmallWindow',
+            'epicMonsterKillsWithin30SecondsOfSpawn',
+
+        # not used but with potential
+
+            # high correlation with used / calculated from used
+            'champExperience',
+            'championId',
+            'baronKills',
+            'totalDamageShieldedOnTeammates',
+            'individualPosition',
+            'teamPosition',
+            'nexusKills',
+            'damageDealtToTurrets',
+            'deathsByEnemyChamps',
+            'damageDealtToObjectives',
+            'kda',
+            'goldEarned',
+            'inhibitorKills',
+            'assists',
+            'turretKills',
+            'dragonKills',
+            'totalHealsOnTeammates',
+            'visionScore',
+
+            # early game dominance
+            'firstBloodKill',
+            'firstBloodAssist',
+            'jungleCsBefore10Minutes',
+            'firstTowerAssist',
+            'takedownsBeforeJungleMinionSpawn',
+            'firstTowerKill',
+            'firstTurretKilled',
+            'turretPlatesTaken',
+            'gameEndedInEarlySurrender',
+            'gameEndedInSurrender',
+            'kTurretsDestroyedBeforePlatesFall',
+            'takedownsFirstXMinutes',
+            'laneMinionsFirst10Minutes',
+            'maxLevelLeadLaneOpponent',
+            'maxCsAdvantageOnLaneOpponent',
+            'teamEarlySurrendered',
+            'laningPhaseGoldExpAdvantage',
+            'earlyLaningPhaseGoldExpAdvantage',
+
+            # wards
+            'wardsGuarded',
+            'wardTakedownsBefore20M',
+            'wardTakedowns',
+            'visionScoreAdvantageLaneOpponent',
+            'stealthWardsPlaced',
+            'visionWardsBoughtInGame',
+            'controlWardsPlaced',
+            'wardsPlaced',
+            'detectorWardsPlaced',
+            'wardsKilled',
+            'sightWardsBoughtInGame',
+
+            # multikills / solokills
+            'pentaKills',
+            'quadraKills',
+            'multikills',
+            'tripleKills',
+            'doubleKills',
+            'soloKills',
+            
+            # minions
+            'totalMinionsKilled',
+            'totalEnemyJungleMinionsKilled',
+            'totalAllyJungleMinionsKilled',
+            'neutralMinionsKilled',
+
+            # jungle
+            'scuttleCrabKills',
+            'moreEnemyJungleThanOpponent',
+            'soloBaronKills',
+            'killsOnLanersEarlyJungleAsJungler',
+            'junglerKillsEarlyJungle',
+            'initialCrabCount',
+            'initialBuffCount',
+            'epicMonsterKillsNearEnemyJungler',
+            'epicMonsterSteals',
+            'buffsStolen',
+            'enemyJungleMonsterKills',
+            'objectivesStolen',
+            'earliestBaron',
+            'junglerTakedownsNearDamagedEpicMonster',
+
+            # support
+            'fasterSupportQuestCompletion',
+            'completeSupportQuestInTime',
+
+            # categorized damage
+            'magicDamageDealt',
+            'magicDamageDealtToChampions',
+            'magicDamageTaken',
+            'physicalDamageDealt',
+            'physicalDamageDealtToChampions',
+            'physicalDamageTaken',
+            'trueDamageDealt',
+            'trueDamageDealtToChampions',
+            'trueDamageTaken',
+            'totalDamageDealtToChampions',
+
+            # time dead / alive
+            'totalTimeSpentDead',
+            'longestTimeSpentLiving',
 
     ], inplace=True)
-
-    '''
-    TODO:
-    drop irrelevant data
-    evaluate performance across multiple metrics and come up with overall score
-    assign weights to champion specifications based on evaluations
-    '''
-
+    
     df = pd.get_dummies(df, columns=['lane'])
     df.replace({True: 1, False: 0}, inplace=True)
-    df_challenges = pd.json_normalize(df['challenges']).add_prefix('challenges_')
-    df = df.drop(columns=['challenges']).join(df_challenges)
-    df.drop(columns=[
 
-        # swarm exclusive data
-        'challenges_SWARM_DefeatAatrox',
-        'challenges_SWARM_DefeatBriar',
-        'challenges_SWARM_DefeatMiniBosses',
-        'challenges_SWARM_EvolveWeapon',
-        'challenges_SWARM_Have3Passives',
-        'challenges_SWARM_KillEnemy',
-        'challenges_SWARM_PickupGold',
-        'challenges_SWARM_ReachLevel50',
-        'challenges_SWARM_Survive15Min',
-        'challenges_SWARM_WinWith5EvolvedWeapons',
+    df['damageDealtToBuildingsPerMinute'] = df['damageDealtToBuildings'] / (df['timePlayed'] / 60)
 
-        # item usage data
-        'challenges_legendaryItemUsed',
-
-        # map specific data
-        'challenges_HealFromMapSources',
-        'challenges_InfernalScalePickup',
-
-        # ability usage data
-        'challenges_abilityUses',
-
-        # fun data
-        'challenges_blastConeOppositeOpponentCount',
-        'challenges_dancedWithRiftHerald',
-        'challenges_doubleAces',
-        'challenges_quickCleanse',
-        'challenges_fistBumpParticipation',
-        'challenges_elderDragonKillsWithOpposingSoul',
-        'challenges_elderDragonMultikills',
-        'challenges_fullTeamTakedown',
-        'challenges_mejaisFullStackInTime',
-        'challenges_multiTurretRiftHeraldCount',
-        'challenges_multikillsAfterAggressiveFlash',
-        'challenges_outerTurretExecutesBefore10Minutes',
-        'challenges_shortestTimeToAceFromFirstTakedown',
-        'challenges_takedownsInAlcove',
-        'challenges_takedownsInEnemyFountain',
-        'challenges_twentyMinionsIn3SecondsCount',
-
-
-        # champion unrelated data
-        'challenges_takedownsAfterGainingLevelAdvantage',
-        'challenges_skillshotsDodged',
-        'challenges_skillshotsHit',
-        'challenges_landSkillShotsEarlyGame',
-        'challenges_dodgeSkillShotsSmallWindow',
-        'challenges_multiKillOneSpell',
-        'challenges_epicMonsterKillsWithin30SecondsOfSpawn',
-
-        # high correlation data
-        'challenges_epicMonsterStolenWithoutSmite',
-
-        # aram specific data
-        'challenges_killsOnRecentlyHealedByAramPack',
-        'challenges_poroExplosions',
-        'challenges_snowballsHit',
-        
-        # team data
-        'challenges_teamBaronKills',
-        'challenges_teamElderDragonKills',
-        'challenges_teamRiftHeraldKills',
-        'challenges_flawlessAces',
-        'challenges_lostAnInhibitor'
-
-    ], inplace=True)
     df = df.groupby(['championName']).mean().reset_index()
-    utils.print_df(df)
+    print_df(df)
     output_dir = "data"
     os.makedirs(output_dir, exist_ok=True)
     df.to_csv(os.path.join(output_dir, "prepared_matches_data.csv"), index=False)
