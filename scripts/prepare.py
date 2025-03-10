@@ -22,6 +22,7 @@ def prepare():
             'objectivesStolenAssists', # how is it calculated?
             'challenges_killingSprees',
             'challenges_turretTakedowns',
+            'bountyLevel', # max / final ?
             'missions',
             'unrealKills',
             'PlayerScore0',
@@ -125,6 +126,9 @@ def prepare():
             'fistBumpParticipation',
             'largestMultiKill',
             'killsUnderOwnTurret',
+            'pickKillWithAlly',
+            'highestChampionDamage',
+            'highestCrowdControlScore',
             'killsOnOtherLanesEarlyJungleAsLaner',
             'killsNearEnemyTurret',
             'killsWithHelpFromEpicMonster',
@@ -206,16 +210,20 @@ def prepare():
 
             # high correlation with used / calculated from used
             'champExperience',
+            'gameLength',
+            'teamDamagePercentage',
+            'damageSelfMitigated',
+            'damageTakenOnTeamPercentage',
+            'kills',
+            'takedowns',
+            'assists',
             'championId',
             'baronKills',
             'totalDamageShieldedOnTeammates',
-            'individualPosition',
-            'teamPosition',
             'nexusKills',
             'damageDealtToTurrets',
             'deathsByEnemyChamps',
             'damageDealtToObjectives',
-            'kda',
             'goldEarned',
             'inhibitorKills',
             'assists',
@@ -223,6 +231,8 @@ def prepare():
             'dragonKills',
             'totalHealsOnTeammates',
             'visionScore',
+            'totalHeal',
+            'enemyChampionImmobilizations',
 
             # early game dominance
             'firstBloodKill',
@@ -307,18 +317,31 @@ def prepare():
             'totalTimeSpentDead',
             'longestTimeSpentLiving',
 
+            # building takedowns
+            'inhibitorTakedowns',
+            'nexusTakedowns',
+            'turretTakedowns',
+
+            # teamplay
+            'saveAllyFromDeath',
+            'immobilizeAndKillWithAlly',
+            'killAfterHiddenWithAlly',
+
+            # lane
+            'individualPosition',
+            'teamPosition',
+            'lane',
+
     ], inplace=True)
     
-    df = pd.get_dummies(df, columns=['lane'])
+    # df = pd.get_dummies(df, columns=['lane'])
     df.replace({True: 1, False: 0}, inplace=True)
 
-    df['damageDealtToBuildingsPerMinute'] = df['damageDealtToBuildings'] / (df['timePlayed'] / 60)
-
-    df = df.groupby(['championName']).mean().reset_index()
-    print_df(df)
     output_dir = "data"
     os.makedirs(output_dir, exist_ok=True)
     df.to_csv(os.path.join(output_dir, "prepared_matches_data.csv"), index=False)
+    return df
 
 if __name__ == '__main__':
-    prepare()
+    df = prepare()
+    print_df(df)
