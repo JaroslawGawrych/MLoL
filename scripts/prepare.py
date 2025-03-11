@@ -1,12 +1,13 @@
 import pandas as pd
 import os
 from utils import print_df
+import ast
 
-def prepare():
+def prepare_matches():
    
-    df = pd.read_json('data/raw_matches_data.json')
+    df = pd.read_json('data/matches_data.json')
 
-    df_challenges = pd.json_normalize(df['challenges']).add_prefix('')
+    df_challenges = pd.json_normalize(df['challenges'])
     df_challenges.rename(columns={
     'killingSprees':'challenges_killingSprees',
     'turretTakedowns':'challenges_turretTakedowns'
@@ -340,8 +341,72 @@ def prepare():
     output_dir = "data"
     os.makedirs(output_dir, exist_ok=True)
     df.to_csv(os.path.join(output_dir, "prepared_matches_data.csv"), index=False)
-    return df
+
+def prepare_champions():
+
+    df = pd.read_csv('data/champion_data.csv')
+
+    df['stats'] = df['stats'].apply(ast.literal_eval)
+    df_stats = pd.json_normalize(df['stats'])
+    df_stats.dropna(axis=1, inplace=True)
+    df = df.drop(columns=['stats']).join(df_stats)
+
+    df['client_positions'] = df['client_positions'].apply(ast.literal_eval)
+    all_positions = set()
+    for positions in df['client_positions']:
+        if len(positions) == 1:
+            all_positions.update(positions)
+
+    df['external_positions'] = df['external_positions'].apply(ast.literal_eval)
+
+    df_client_position = pd.DataFrame({
+        client_position: df.apply(lambda row: client_position in row['client_positions'] or client_position in row['external_positions'], axis=1)
+        for client_position in all_positions
+    })
+
+    df = df.join(df_client_position)
+
+    df['role'] = df['role'].apply(ast.literal_eval)
+    all_roles = set()
+    for roles in df['role']:
+        if len(roles) == 1:
+            all_roles.update(roles)
+
+    df_role = pd.DataFrame({
+        role: df['role'].apply(lambda roles: role in roles)
+        for role in all_roles
+    })
+
+    df = df.join(df_role)
+
+    df.drop(columns=[
+        'Unnamed: 0',
+        'client_positions',
+        'external_positions',
+        'role',
+        'id',
+        'date',
+        'title',
+        'patch',
+        'changes',
+        'be',
+        'rp',
+        'skill_i',
+        'skill_q',
+        'skill_w',
+        'skill_e',
+        'skill_r',
+        'skills',
+        'fullname',
+        'nickname',
+    ], inplace=True)
+
+    print_df(df.head(10).tail(5))
+    
+    output_dir = "data"
+    os.makedirs(output_dir, exist_ok=True)
+    df.to_csv(os.path.join(output_dir, "prepared_champion_data.csv"), index=False)
 
 if __name__ == '__main__':
-    df = prepare()
-    print_df(df)
+    prepare_matches()
+    prepare_champions()

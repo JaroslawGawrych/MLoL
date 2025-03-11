@@ -3,6 +3,8 @@ import os
 from enum import Enum
 from typing import List, Dict
 import json
+import dotenv
+dotenv.load_dotenv()
 
 RIOT_KEY = os.getenv('RIOT_KEY')
 
@@ -60,14 +62,14 @@ def get_match_results(region: Match_region, match_ids: List[str], puuid: str) ->
             return match_results
     return match_results
 
-def save_raw_match_data(match_results: List[Dict]):
+def save_match_data(match_results: List[Dict]):
     output_dir = "data"
     os.makedirs(output_dir, exist_ok=True)
-    with open(os.path.join(output_dir, "raw_matches_data.json"), 'w') as fp:
+    with open(os.path.join(output_dir, "matches_data.json"), 'w') as fp:
         json.dump(match_results, fp, indent=4)
 
 if __name__ == '__main__':
-    puuid = get_puuid(region=Puuid_region.EUROPE, gameName='julusia42069', tagLine='eune')
+    puuid = get_puuid(region=Puuid_region.EUROPE, gameName='aight bet', tagLine='eune')
     match_ids = get_match_ids(region=Match_region.EUROPE, type=Match_type.RANKED, puuid=puuid, start=0, count=20, limit=40, match_ids=[])
     match_results = get_match_results(region=Match_region.EUROPE, match_ids=match_ids, puuid=puuid)
-    save_raw_match_data(match_results=match_results)
+    save_match_data(match_results=match_results)

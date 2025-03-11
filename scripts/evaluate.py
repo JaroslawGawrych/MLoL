@@ -33,20 +33,20 @@ def evaluate():
     cols = [col for col in df.columns if col != 'championName']
     df[cols] = df[cols].apply(zscore)
 
-    champions = pd.read_csv('data/champion_data.csv') 
+    champions = pd.read_csv('data/prepared_champion_data.csv') 
 
     df['score'] = 0
     for col in df[cols]:
         df['score'] += df[col]
-    
+
     df.set_index('championName', inplace=True)
     champions.set_index('apiname', inplace=True)
-    
+
     champions = champions.join(df['score'])
     
     champions.sort_values(by='score', ascending=False, inplace=True)
 
-    print(champions.head())
+    print_df(champions.head(6))
 
 if __name__ == '__main__':
     evaluate()
