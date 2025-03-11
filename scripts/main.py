@@ -157,8 +157,8 @@ def download_matches_data(
     gameName: str,
     tagLine: str,
     start: int = 0,
-    count: int = 20,
-    limit: int = 20,
+    count: int = 100,
+    limit: int = 100,
     match_type: Match_type = Match_type.RANKED,
     match_region: Match_region = Match_region.EUROPE,
     puuid_region: Puuid_region = Puuid_region.EUROPE,
@@ -295,9 +295,9 @@ if __name__ == "__main__":
     # download_champion_data()
     # prepare_champions()
 
-    download_matches_data(gameName="aight bet", tagLine="eune", count=100, limit=100)
+    download_matches_data(gameName="aight bet", tagLine="eune")
     prepare_matches()
 
     out = evaluate()
 
-    print(out["score"].head(20))
+    print(out["score"].head(50))
