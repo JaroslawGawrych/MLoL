@@ -48,6 +48,53 @@ def download_champion_data():
         df.to_csv(os.path.join(output_dir, "champion_data.csv"), index=False)
 
 
+def prepare_champions():
+
+    df = pd.read_csv("data/champion_data.csv")
+
+    df["stats"] = df["stats"].apply(literal_eval)
+    df_stats = pd.json_normalize(df["stats"])
+    df_stats.dropna(axis=1, inplace=True)
+    df = df.drop(columns=["stats"]).join(df_stats)
+
+    df["client_positions"] = df["client_positions"].apply(literal_eval)
+    all_positions = set()
+    for positions in df["client_positions"]:
+        if len(positions) == 1:
+            all_positions.update(positions)
+
+    df["external_positions"] = df["external_positions"].apply(literal_eval)
+
+    df_client_position = pd.DataFrame(
+        {
+            client_position: df.apply(
+                lambda row: client_position in row["client_positions"]
+                or client_position in row["external_positions"],
+                axis=1,
+            )
+            for client_position in all_positions
+        }
+    )
+
+    df = df.join(df_client_position)
+
+    df["role"] = df["role"].apply(literal_eval)
+    all_roles = set()
+    for roles in df["role"]:
+        if len(roles) == 1:
+            all_roles.update(roles)
+
+    df_role = pd.DataFrame(
+        {role: df["role"].apply(lambda roles: role in roles) for role in all_roles}
+    )
+
+    df = df.join(df_role)
+
+    output_dir = "data"
+    os.makedirs(output_dir, exist_ok=True)
+    df.to_csv(os.path.join(output_dir, "prepared_champion_data.csv"), index=False)
+
+
 def get_puuid(region: Puuid_region, gameName: str, tagLine: str) -> str | None:
     url = f"https://{region.name}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{gameName}/{tagLine}?api_key={RIOT_KEY}"
     response = requests.get(url)
@@ -110,7 +157,7 @@ def download_matches_data(
     gameName: str,
     tagLine: str,
     start: int = 0,
-    count=20,
+    count: int = 20,
     limit: int = 20,
     match_type: Match_type = Match_type.RANKED,
     match_region: Match_region = Match_region.EUROPE,
@@ -152,53 +199,6 @@ def prepare_matches():
     output_dir = "data"
     os.makedirs(output_dir, exist_ok=True)
     df.to_csv(os.path.join(output_dir, "prepared_matches_data.csv"), index=False)
-
-
-def prepare_champions():
-
-    df = pd.read_csv("data/champion_data.csv")
-
-    df["stats"] = df["stats"].apply(literal_eval)
-    df_stats = pd.json_normalize(df["stats"])
-    df_stats.dropna(axis=1, inplace=True)
-    df = df.drop(columns=["stats"]).join(df_stats)
-
-    df["client_positions"] = df["client_positions"].apply(literal_eval)
-    all_positions = set()
-    for positions in df["client_positions"]:
-        if len(positions) == 1:
-            all_positions.update(positions)
-
-    df["external_positions"] = df["external_positions"].apply(literal_eval)
-
-    df_client_position = pd.DataFrame(
-        {
-            client_position: df.apply(
-                lambda row: client_position in row["client_positions"]
-                or client_position in row["external_positions"],
-                axis=1,
-            )
-            for client_position in all_positions
-        }
-    )
-
-    df = df.join(df_client_position)
-
-    df["role"] = df["role"].apply(literal_eval)
-    all_roles = set()
-    for roles in df["role"]:
-        if len(roles) == 1:
-            all_roles.update(roles)
-
-    df_role = pd.DataFrame(
-        {role: df["role"].apply(lambda roles: role in roles) for role in all_roles}
-    )
-
-    df = df.join(df_role)
-
-    output_dir = "data"
-    os.makedirs(output_dir, exist_ok=True)
-    df.to_csv(os.path.join(output_dir, "prepared_champion_data.csv"), index=False)
 
 
 def evaluate():
@@ -295,7 +295,7 @@ if __name__ == "__main__":
     # download_champion_data()
     # prepare_champions()
 
-    download_matches_data(gameName="julusia42069", tagLine="eune", count=100, limit=100)
+    download_matches_data(gameName="aight bet", tagLine="eune", count=100, limit=100)
     prepare_matches()
 
     out = evaluate()
