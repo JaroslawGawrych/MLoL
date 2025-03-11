@@ -2,6 +2,7 @@ import pandas as pd
 import os
 from ydata_profiling import ProfileReport
 
+
 def eda(file_path: str) -> None:
     file_extension = os.path.splitext(file_path)[1].lower()
     file_name = os.path.splitext(os.path.basename(file_path))[0]
@@ -12,14 +13,15 @@ def eda(file_path: str) -> None:
         df = pd.read_json(file_path)
     else:
         raise ValueError("Unsupported file format.")
-        
+
     profile_report = ProfileReport(df)
 
-    output_dir = 'visualizations'
+    output_dir = "visualizations"
     os.makedirs(output_dir, exist_ok=True)
-    file_path = os.path.join(output_dir, f'{file_name}_eda.html')
+    file_path = os.path.join(output_dir, f"{file_name}_eda.html")
     profile_report.to_file(file_path)
 
+
 def print_df(df):
-    with pd.option_context('display.max_rows', None, 'display.max_columns', None):
-            print(df)
+    with pd.option_context("display.max_rows", None, "display.max_columns", None):
+        print(df)
