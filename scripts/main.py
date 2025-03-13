@@ -279,33 +279,32 @@ def evaluate():
         mean, std = utils.weighted_mean_std(df[col], df["count"])
         df[col] = (df[col] - mean) / std
 
-    # weights = utils.calculate_weights(
-    #     df_ungrouped,
-    #     group_by="teamPosition",
-    #     target="win",
-    #     excluded=["championName"],
-    # )
-    weights = pd.read_json("weights.json")
+    weights = utils.calculate_weights(
+        df_ungrouped,
+        group_by="teamPosition",
+        target="win",
+        excluded=["championName"],
+    )
+    # weights = pd.read_json("weights.json")
 
     df["score"] = 0.0
     for index, row in df.iterrows():
         for col in cols:
             if not pd.isna(row[col]):
-                if row["count"] > 1:
-                    teamPosition = row["teamPosition"]
-                    if teamPosition == "TOP":
-                        weight = weights["TOP"].get(col, 1.0)
-                    elif teamPosition == "JUNGLE":
-                        weight = weights["JUNGLE"].get(col, 1.0)
-                    elif teamPosition == "MIDDLE":
-                        weight = weights["MIDDLE"].get(col, 1.0)
-                    elif teamPosition == "BOTTOM":
-                        weight = weights["BOTTOM"].get(col, 1.0)
-                    elif teamPosition == "UTILITY":
-                        weight = weights["UTILITY"].get(col, 1.0)
-                    else:
-                        weight = 1.0
-                    df.at[index, "score"] += row[col] * weight
+                teamPosition = row["teamPosition"]
+                if teamPosition == "TOP":
+                    weight = weights["TOP"].get(col, 1.0)
+                elif teamPosition == "JUNGLE":
+                    weight = weights["JUNGLE"].get(col, 1.0)
+                elif teamPosition == "MIDDLE":
+                    weight = weights["MIDDLE"].get(col, 1.0)
+                elif teamPosition == "BOTTOM":
+                    weight = weights["BOTTOM"].get(col, 1.0)
+                elif teamPosition == "UTILITY":
+                    weight = weights["UTILITY"].get(col, 1.0)
+                else:
+                    weight = 1.0
+                df.at[index, "score"] += row[col] * weight
 
     champions = pd.read_csv("data/prepared_champion_data.csv")
 
