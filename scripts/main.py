@@ -9,6 +9,7 @@ import numpy as np
 from scipy.stats import zscore
 import json
 from dotenv import load_dotenv
+import utils
 
 load_dotenv()
 
@@ -36,11 +37,14 @@ class Match_type(Enum):
     TUTORIAL = 4
 
 
-def download_champion_data():
+def download_champion_data(force_download: bool = False):
+
     path = kagglehub.dataset_download(
-        "laurenainsleyhaines/25-s1-3-league-of-legends-champion-data-2025"
+        "laurenainsleyhaines/25-s1-3-league-of-legends-champion-data-2025",
+        force_download=force_download,
     )
     print("Path to dataset files:", path)
+
     output_dir = "data"
     os.makedirs(output_dir, exist_ok=True)
     for file_name in os.listdir(path):
@@ -149,8 +153,8 @@ def get_match_results(
 def save_match_data(match_results: List[Dict]) -> None:
     output_dir = "data"
     os.makedirs(output_dir, exist_ok=True)
-    with open(os.path.join(output_dir, "matches_data.json"), "w") as fp:
-        json.dump(match_results, fp, indent=4)
+    with open(os.path.join(output_dir, "matches_data.json"), "w") as f:
+        json.dump(match_results, f, indent=4)
 
 
 def download_matches_data(
@@ -193,7 +197,6 @@ def prepare_matches():
     )
     df = df.drop(columns=["challenges"]).join(df_challenges)
 
-    # df = pd.get_dummies(df, columns=['lane'])
     df.replace({True: 1, False: 0}, inplace=True)
 
     output_dir = "data"
@@ -221,39 +224,90 @@ def evaluate():
     df["damageTakenPerDeath"] = df["totalDamageTaken"] / np.where(
         df["deaths"] > 0, df["deaths"], 1
     )
+    df["quadraKills"] -= df["pentaKills"]
+    df["tripleKills"] -= df["quadraKills"]
+    df["doubleKills"] -= df["tripleKills"]
 
     df = df[
         [
             "championName",
             "win",
+            "kda",
+            "doubleKills",
+            "tripleKills",
+            "quadraKills",
+            "pentaKills",
             "damagePerMinute",
             "goldPerMinute",
-            "kda",
+            "earlyLaningPhaseGoldExpAdvantage",
             "killParticipation",
-            "visionScorePerMinute",
             "champLevelPerMinute",
             "damageDealtToBuildingsPerMinute",
             "neutralObjectivesTakedowns",
             "effectiveHealAndShieldingPerMinute",
             "totalTimeCCDealtPerMinute",
             "damageTakenPerDeath",
+            "visionScorePerMinute",
+            "teamPosition",
         ]
     ]
 
     df.dropna(axis=0, inplace=True)
 
-    # TODO - games played
-    df = df.groupby(["championName"]).mean().reset_index()
+    df_ungrouped = df
+    games_count = df[["championName", "teamPosition"]].value_counts().reset_index()
 
-    cols = [col for col in df.columns if col != "championName"]
+    df = df.groupby(["championName", "teamPosition"]).mean().reset_index()
+    df = df.merge(games_count, on=["championName", "teamPosition"])
 
-    df[cols] = df[cols].apply(lambda x: zscore(x, nan_policy="raise"), axis=0)
+    df["winRate"] = df["win"] / df["count"]
+    df.drop(columns=["win"], inplace=True)
+
+    output_dir = "data"
+    os.makedirs(output_dir, exist_ok=True)
+    df.to_csv(
+        os.path.join(output_dir, "grouped_prepared_matches_data.csv"), index=False
+    )
+
+    cols = [
+        col
+        for col in df.columns
+        if col not in ["championName", "count", "teamPosition"]
+    ]
+
+    for col in cols:
+        mean, std = utils.weighted_mean_std(df[col], df["count"])
+        df[col] = (df[col] - mean) / std
+
+    # weights = utils.calculate_weights(
+    #     df_ungrouped,
+    #     group_by="teamPosition",
+    #     target="win",
+    #     excluded=["championName"],
+    # )
+    weights = pd.read_json("weights.json")
+
+    df["score"] = 0.0
+    for index, row in df.iterrows():
+        for col in cols:
+            if not pd.isna(row[col]):
+                if row["count"] > 1:
+                    teamPosition = row["teamPosition"]
+                    if teamPosition == "TOP":
+                        weight = weights["TOP"].get(col, 1.0)
+                    elif teamPosition == "JUNGLE":
+                        weight = weights["JUNGLE"].get(col, 1.0)
+                    elif teamPosition == "MIDDLE":
+                        weight = weights["MIDDLE"].get(col, 1.0)
+                    elif teamPosition == "BOTTOM":
+                        weight = weights["BOTTOM"].get(col, 1.0)
+                    elif teamPosition == "UTILITY":
+                        weight = weights["UTILITY"].get(col, 1.0)
+                    else:
+                        weight = 1.0
+                    df.at[index, "score"] += row[col] * weight
 
     champions = pd.read_csv("data/prepared_champion_data.csv")
-
-    df["score"] = 0
-    for col in df[cols]:
-        df["score"] += df[col]
 
     champions.drop(
         columns=[
@@ -283,21 +337,25 @@ def evaluate():
     df.set_index("championName", inplace=True)
     champions.set_index("apiname", inplace=True)
 
-    champions = champions.join(df["score"])
+    df = df.join(champions)
 
-    champions.sort_values(by="score", ascending=False, inplace=True)
+    df.reset_index(inplace=True)
 
-    return champions
+    df.sort_values(by="score", ascending=False, inplace=True)
+
+    return df
 
 
 if __name__ == "__main__":
+
     # TODO - periodically?
-    # download_champion_data()
+    # download_champion_data(force_download=True)
     # prepare_champions()
 
-    download_matches_data(gameName="aight bet", tagLine="eune")
-    prepare_matches()
+    # download_matches_data(gameName="aight bet", tagLine="eune")
+    # prepare_matches()
 
     out = evaluate()
+    print(out[["championName", "teamPosition", "score", "count"]].head(50))
 
-    print(out["score"].head(50))
+    # utils.eda("data/grouped_prepared_matches_data.csv")
