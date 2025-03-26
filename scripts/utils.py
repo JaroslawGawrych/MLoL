@@ -30,13 +30,6 @@ def print_df(df):
         print(df)
 
 
-def weighted_mean_std(series, weights):
-    mean = np.average(series, weights=weights)
-    variance = np.average((series - mean) ** 2, weights=weights)
-    std = np.sqrt(variance)
-    return mean, std
-
-
 def calculate_weights(df, group_by: str, target: str, excluded: List[str] = []):
 
     excluded += [group_by, target]

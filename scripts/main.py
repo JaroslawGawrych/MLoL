@@ -96,7 +96,7 @@ def prepare_champions():
 
     output_dir = "data"
     os.makedirs(output_dir, exist_ok=True)
-    df.to_csv(os.path.join(output_dir, "prepared_champion_data.csv"), index=False)
+    df.to_csv(os.path.join(output_dir, "champion_data_prepared.csv"), index=False)
 
 
 def get_puuid(region: Puuid_region, gameName: str, tagLine: str) -> str | None:
@@ -201,12 +201,12 @@ def prepare_matches():
 
     output_dir = "data"
     os.makedirs(output_dir, exist_ok=True)
-    df.to_csv(os.path.join(output_dir, "prepared_matches_data.csv"), index=False)
+    df.to_csv(os.path.join(output_dir, "matches_data_prepared.csv"), index=False)
 
 
 def evaluate():
 
-    df = pd.read_csv("data/prepared_matches_data.csv")
+    df = pd.read_csv("data/matches_data_prepared.csv")
     df["champLevelPerMinute"] = df["champLevel"] / (df["timePlayed"] / 60)
     df["damageDealtToBuildingsPerMinute"] = df["damageDealtToBuildings"] / (
         df["timePlayed"] / 60
@@ -255,29 +255,8 @@ def evaluate():
     df.dropna(axis=0, inplace=True)
 
     df_ungrouped = df
-    games_count = df[["championName", "teamPosition"]].value_counts().reset_index()
 
-    df = df.groupby(["championName", "teamPosition"]).mean().reset_index()
-    df = df.merge(games_count, on=["championName", "teamPosition"])
-
-    df["winRate"] = df["win"] / df["count"]
-    df.drop(columns=["win"], inplace=True)
-
-    output_dir = "data"
-    os.makedirs(output_dir, exist_ok=True)
-    df.to_csv(
-        os.path.join(output_dir, "grouped_prepared_matches_data.csv"), index=False
-    )
-
-    cols = [
-        col
-        for col in df.columns
-        if col not in ["championName", "count", "teamPosition"]
-    ]
-
-    for col in cols:
-        mean, std = utils.weighted_mean_std(df[col], df["count"])
-        df[col] = (df[col] - mean) / std
+    cols = [col for col in df.columns if col not in ["championName", "teamPosition"]]
 
     weights = utils.calculate_weights(
         df_ungrouped,
@@ -306,14 +285,21 @@ def evaluate():
                     weight = 1.0
                 df.at[index, "score"] += row[col] * weight
 
-    champions = pd.read_csv("data/prepared_champion_data.csv")
+    games_count = df[["championName", "teamPosition"]].value_counts().reset_index()
+
+    df = df.groupby(["championName", "teamPosition"]).mean().reset_index()
+    df = df.merge(games_count, on=["championName", "teamPosition"])
+
+    # df["winRate"] = df["win"] / df["count"]
+    # df.drop(columns=["win"], inplace=True)
+
+    champions = pd.read_csv("data/champion_data_prepared.csv")
 
     champions.drop(
         columns=[
             "Unnamed: 0",
             "client_positions",
             "external_positions",
-            "role",
             "id",
             "date",
             "title",
@@ -333,16 +319,35 @@ def evaluate():
         inplace=True,
     )
 
+    df["championName"] = df["championName"].str.lower()
+    champions["apiname"] = champions["apiname"].str.lower()
+
     df.set_index("championName", inplace=True)
     champions.set_index("apiname", inplace=True)
 
-    df = df.join(champions)
+    output_dir = "data"
+    os.makedirs(output_dir, exist_ok=True)
+    df.to_csv(os.path.join(output_dir, "matches_data_scored.csv"), index=False)
+
+    df = df[["score"]].join(champions)
 
     df.reset_index(inplace=True)
 
     df.sort_values(by="score", ascending=False, inplace=True)
 
+    os.makedirs(output_dir, exist_ok=True)
+    df.to_csv(os.path.join(output_dir, "champion_data_scored.csv"), index=False)
+
     return df
+
+
+def split():
+    df = pd.read_csv("data/champion_data_scored.csv")
+    df_role = pd.json_normalize(df["role"])
+    df = df.drop(columns=["role"]).join(df_role)
+
+    df.replace({True: 1, False: 0}, inplace=True)
+    utils.print_df(df.head(5))
 
 
 if __name__ == "__main__":
@@ -351,10 +356,12 @@ if __name__ == "__main__":
     # download_champion_data(force_download=True)
     # prepare_champions()
 
-    # download_matches_data(gameName="aight bet", tagLine="eune")
+    # download_matches_data(gameName="julusia42069", tagLine="eune")
     # prepare_matches()
 
-    out = evaluate()
-    print(out[["championName", "teamPosition", "score", "count"]].head(50))
+    # out = evaluate()
+    # print(out.head(50))
+
+    split()
 
     # utils.eda("data/grouped_prepared_matches_data.csv")
