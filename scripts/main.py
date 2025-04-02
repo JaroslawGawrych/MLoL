@@ -6,10 +6,13 @@ from ast import literal_eval
 from enum import Enum
 from typing import List, Dict
 import numpy as np
-from scipy.stats import zscore
 import json
 from dotenv import load_dotenv
 import utils
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 
 load_dotenv()
 
@@ -286,12 +289,15 @@ def evaluate():
                 df.at[index, "score"] += row[col] * weight
 
     games_count = df[["championName", "teamPosition"]].value_counts().reset_index()
+    df_grouped = df.groupby(["championName", "teamPosition"]).mean().reset_index()
+    df_grouped = df_grouped.merge(games_count, on=["championName", "teamPosition"])
 
-    df = df.groupby(["championName", "teamPosition"]).mean().reset_index()
-    df = df.merge(games_count, on=["championName", "teamPosition"])
+    output_dir = "data"
+    os.makedirs(output_dir, exist_ok=True)
 
-    # df["winRate"] = df["win"] / df["count"]
-    # df.drop(columns=["win"], inplace=True)
+    df_grouped.to_csv(
+        os.path.join(output_dir, "matches_data_scored_grouped.csv"), index=False
+    )
 
     champions = pd.read_csv("data/champion_data_prepared.csv")
 
@@ -325,8 +331,6 @@ def evaluate():
     df.set_index("championName", inplace=True)
     champions.set_index("apiname", inplace=True)
 
-    output_dir = "data"
-    os.makedirs(output_dir, exist_ok=True)
     df.to_csv(os.path.join(output_dir, "matches_data_scored.csv"), index=False)
 
     df = df[["score"]].join(champions)
@@ -334,11 +338,12 @@ def evaluate():
     df.reset_index(inplace=True)
 
     df.sort_values(by="score", ascending=False, inplace=True)
+    df_grouped.sort_values(by="score", ascending=False, inplace=True)
 
     os.makedirs(output_dir, exist_ok=True)
     df.to_csv(os.path.join(output_dir, "champion_data_scored.csv"), index=False)
 
-    return df
+    return df, df_grouped
 
 
 def split():
@@ -346,8 +351,32 @@ def split():
     df_role = pd.json_normalize(df["role"])
     df = df.drop(columns=["role"]).join(df_role)
 
+    # df_championName = df[["championName"]]
+    df = pd.get_dummies(df.drop(columns=["championName"]))
+    # df = pd.concat([df_championName, df], axis=1)
+
     df.replace({True: 1, False: 0}, inplace=True)
-    utils.print_df(df.head(5))
+
+    y = df["score"]
+    X = df.drop(columns=["score"])
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+
+    scaler = StandardScaler()
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
+
+    model = LinearRegression()
+    model.fit(X_train, y_train)
+
+    y_pred = model.predict(X_test)
+
+    mse = mean_squared_error(y_test, y_pred)
+    mae = mean_absolute_error(y_test, y_pred)
+    print(f"Mean Squared Error: {mse:.4f}")
+    print(f"Mean Absolute Error: {mae:.4f}")
 
 
 if __name__ == "__main__":
@@ -359,8 +388,8 @@ if __name__ == "__main__":
     # download_matches_data(gameName="julusia42069", tagLine="eune")
     # prepare_matches()
 
-    # out = evaluate()
-    # print(out.head(50))
+    df, df_grouped = evaluate()
+    print(df_grouped.head(50))
 
     split()
 
