@@ -160,6 +160,7 @@ def save_match_data(match_results: List[Dict]) -> None:
         json.dump(match_results, f, indent=4)
 
 
+# TODO - more than 100 requests
 def download_matches_data(
     gameName: str,
     tagLine: str,
@@ -346,7 +347,7 @@ def evaluate():
     return df, df_grouped
 
 
-def split():
+def linear_regression():
     df = pd.read_csv("data/champion_data_scored.csv")
     df_role = pd.json_normalize(df["role"])
     df = df.drop(columns=["role"]).join(df_role)
@@ -373,17 +374,15 @@ def split():
 
     y_pred = model.predict(X_test)
 
-    mse = mean_squared_error(y_test, y_pred)
     mae = mean_absolute_error(y_test, y_pred)
-    print(f"Mean Squared Error: {mse:.4f}")
-    print(f"Mean Absolute Error: {mae:.4f}")
+    print(f"MAE: {mae:.4f}")
 
 
 if __name__ == "__main__":
 
     # TODO - periodically?
-    # download_champion_data(force_download=True)
-    # prepare_champions()
+    download_champion_data(force_download=True)
+    prepare_champions()
 
     # download_matches_data(gameName="julusia42069", tagLine="eune")
     # prepare_matches()
@@ -391,6 +390,4 @@ if __name__ == "__main__":
     df, df_grouped = evaluate()
     print(df_grouped.head(50))
 
-    split()
-
-    # utils.eda("data/grouped_prepared_matches_data.csv")
+    linear_regression()
