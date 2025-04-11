@@ -1,3 +1,4 @@
+import time
 import pandas as pd
 import kagglehub
 import requests
@@ -12,10 +13,15 @@ import utils
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error, mean_absolute_error
+from sklearn.metrics import mean_absolute_error
+
+OUTPUT_DIR = "data"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+MATCHES_DATA_PATH = os.path.join(OUTPUT_DIR, "matches_data.json")
+
 
 load_dotenv()
-
 RIOT_KEY = os.getenv("RIOT_KEY")
 
 
@@ -40,6 +46,27 @@ class Match_type(Enum):
     TUTORIAL = 4
 
 
+REQUESTS_HISTORY_FILE = "requests_history.json"
+
+
+def load_request_history() -> List[float]:
+    if os.path.exists(REQUESTS_HISTORY_FILE):
+        with open(REQUESTS_HISTORY_FILE, "r") as f:
+            return json.load(f)
+    else:
+        return []
+
+
+def save_request_history() -> None:
+    with open(REQUESTS_HISTORY_FILE, "w") as f:
+        json.dump(REQUESTS_HISTORY, f)
+
+
+REQUESTS_HISTORY = load_request_history()
+MAX_REQUESTS_PER_SECOND = 20
+MAX_REQUESTS_PER_2_MINUTES = 100
+
+
 def download_champion_data(force_download: bool = False):
 
     path = kagglehub.dataset_download(
@@ -48,11 +75,9 @@ def download_champion_data(force_download: bool = False):
     )
     print("Path to dataset files:", path)
 
-    output_dir = "data"
-    os.makedirs(output_dir, exist_ok=True)
     for file_name in os.listdir(path):
         df = pd.read_csv(os.path.join(path, file_name))
-        df.to_csv(os.path.join(output_dir, "champion_data.csv"), index=False)
+        df.to_csv(os.path.join(OUTPUT_DIR, "champion_data.csv"), index=False)
 
 
 def prepare_champions():
@@ -97,14 +122,36 @@ def prepare_champions():
 
     df = df.join(df_role)
 
-    output_dir = "data"
-    os.makedirs(output_dir, exist_ok=True)
-    df.to_csv(os.path.join(output_dir, "champion_data_prepared.csv"), index=False)
+    df.to_csv(os.path.join(OUTPUT_DIR, "champion_data_prepared.csv"), index=False)
+
+
+def make_request(url: str) -> requests.Response:
+    while not can_make_request():
+        time.sleep(0.1)
+    response = requests.get(url)
+    REQUESTS_HISTORY.append(time.time())
+    save_request_history()
+    return response
+
+
+def can_make_request() -> bool:
+    now = time.time()
+    REQUESTS_HISTORY[:] = [
+        timestamp for timestamp in REQUESTS_HISTORY if now - timestamp < 120
+    ]
+    if len(REQUESTS_HISTORY) >= MAX_REQUESTS_PER_2_MINUTES:
+        return False
+    if (
+        len([timestamp for timestamp in REQUESTS_HISTORY if now - timestamp < 1])
+        >= MAX_REQUESTS_PER_SECOND
+    ):
+        return False
+    return True
 
 
 def get_puuid(region: Puuid_region, gameName: str, tagLine: str) -> str | None:
     url = f"https://{region.name}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{gameName}/{tagLine}?api_key={RIOT_KEY}"
-    response = requests.get(url)
+    response = make_request(url)
     if response.status_code == 200:
         return response.json().get("puuid")
     else:
@@ -118,16 +165,18 @@ def get_match_ids(
     puuid: str,
     start: int,
     count: int,
-    limit: int,
     match_ids: List[str],
 ) -> List[str]:
-    if len(match_ids) + count <= limit:
-        url = f"https://{region.name}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?type={type.name.lower()}&start={start}&count={count}&api_key={RIOT_KEY}"
-        response = requests.get(url)
+    count_param = count
+    if count > 100:
+        count_param = 100
+    url = f"https://{region.name}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?type={type.name.lower()}&start={start}&count={count_param}&api_key={RIOT_KEY}"
+    if len(match_ids) < count:
+        response = make_request(url)
         if response.status_code == 200:
             match_ids += response.json()
             match_ids = get_match_ids(
-                region, type, puuid, start + count, count, limit, match_ids
+                region, type, puuid, start + count, count, match_ids
             )
         else:
             print("Error:", response.text)
@@ -135,42 +184,44 @@ def get_match_ids(
     return match_ids
 
 
-def get_match_results(
-    region: Match_region, match_ids: List[str], puuid: str
-) -> List[Dict]:
-    match_results = []
+def get_match_results(region: Match_region, match_ids: List[str], puuid: str) -> None:
     for match_id in match_ids:
         url = f"https://{region.name}.api.riotgames.com//lol/match/v5/matches/{match_id}?api_key={RIOT_KEY}"
-        response = requests.get(url)
+        response = make_request(url)
         if response.status_code == 200:
             participants = response.json().get("info", {}).get("participants", [])
             for participant in participants:
                 if participant.get("puuid") == puuid:
-                    match_results.append(participant)
+                    save_match_data(participant)
         else:
             print("Error:", response.text)
-            return match_results
-    return match_results
 
 
-def save_match_data(match_results: List[Dict]) -> None:
-    output_dir = "data"
-    os.makedirs(output_dir, exist_ok=True)
-    with open(os.path.join(output_dir, "matches_data.json"), "w") as f:
-        json.dump(match_results, f, indent=4)
+def save_match_data(match_data: Dict) -> None:
+
+    if os.path.exists(MATCHES_DATA_PATH) and os.path.getsize(MATCHES_DATA_PATH) > 0:
+        with open(MATCHES_DATA_PATH, "r") as f:
+            all_data = json.load(f)
+    else:
+        all_data = []
+
+    all_data.append(match_data)
+
+    with open(MATCHES_DATA_PATH, "w") as f:
+        json.dump(all_data, f, indent=4)
 
 
-# TODO - more than 100 requests
 def download_matches_data(
     gameName: str,
     tagLine: str,
     start: int = 0,
-    count: int = 100,
-    limit: int = 100,
+    count: int = 99,
     match_type: Match_type = Match_type.RANKED,
     match_region: Match_region = Match_region.EUROPE,
     puuid_region: Puuid_region = Puuid_region.EUROPE,
 ):
+    if os.path.exists(MATCHES_DATA_PATH):
+        open(MATCHES_DATA_PATH, "w").close()
     puuid = get_puuid(region=puuid_region, gameName=gameName, tagLine=tagLine)
     match_ids = get_match_ids(
         region=match_region,
@@ -178,18 +229,14 @@ def download_matches_data(
         puuid=puuid,
         start=start,
         count=count,
-        limit=limit,
         match_ids=[],
     )
-    match_results = get_match_results(
-        region=match_region, match_ids=match_ids, puuid=puuid
-    )
-    save_match_data(match_results)
+    get_match_results(region=match_region, match_ids=match_ids, puuid=puuid)
 
 
 def prepare_matches():
 
-    df = pd.read_json("data/matches_data.json")
+    df = pd.read_json(MATCHES_DATA_PATH)
 
     df_challenges = pd.json_normalize(df["challenges"])
     df_challenges.rename(
@@ -203,9 +250,7 @@ def prepare_matches():
 
     df.replace({True: 1, False: 0}, inplace=True)
 
-    output_dir = "data"
-    os.makedirs(output_dir, exist_ok=True)
-    df.to_csv(os.path.join(output_dir, "matches_data_prepared.csv"), index=False)
+    df.to_csv(os.path.join(OUTPUT_DIR, "matches_data_prepared.csv"), index=False)
 
 
 def evaluate():
@@ -293,13 +338,6 @@ def evaluate():
     df_grouped = df.groupby(["championName", "teamPosition"]).mean().reset_index()
     df_grouped = df_grouped.merge(games_count, on=["championName", "teamPosition"])
 
-    output_dir = "data"
-    os.makedirs(output_dir, exist_ok=True)
-
-    df_grouped.to_csv(
-        os.path.join(output_dir, "matches_data_scored_grouped.csv"), index=False
-    )
-
     champions = pd.read_csv("data/champion_data_prepared.csv")
 
     champions.drop(
@@ -332,17 +370,19 @@ def evaluate():
     df.set_index("championName", inplace=True)
     champions.set_index("apiname", inplace=True)
 
-    df.to_csv(os.path.join(output_dir, "matches_data_scored.csv"), index=False)
+    df.to_csv(os.path.join(OUTPUT_DIR, "matches_data_scored.csv"), index=False)
 
-    df = df[["score"]].join(champions)
+    df = champions.join(df[["score"]])
 
     df.reset_index(inplace=True)
 
     df.sort_values(by="score", ascending=False, inplace=True)
     df_grouped.sort_values(by="score", ascending=False, inplace=True)
 
-    os.makedirs(output_dir, exist_ok=True)
-    df.to_csv(os.path.join(output_dir, "champion_data_scored.csv"), index=False)
+    df.to_csv(os.path.join(OUTPUT_DIR, "champion_data_scored.csv"), index=False)
+    df_grouped.to_csv(
+        os.path.join(OUTPUT_DIR, "matches_data_scored_grouped.csv"), index=False
+    )
 
     return df, df_grouped
 
@@ -352,14 +392,19 @@ def linear_regression():
     df_role = pd.json_normalize(df["role"])
     df = df.drop(columns=["role"]).join(df_role)
 
-    # df_championName = df[["championName"]]
-    df = pd.get_dummies(df.drop(columns=["championName"]))
-    # df = pd.concat([df_championName, df], axis=1)
+    apiname = df["apiname"]
+    df_features = df.drop(columns=["apiname"])
 
-    df.replace({True: 1, False: 0}, inplace=True)
+    df_features = pd.get_dummies(df_features)
+    df_features.replace({True: 1, False: 0}, inplace=True)
 
-    y = df["score"]
-    X = df.drop(columns=["score"])
+    df = pd.concat([apiname, df_features], axis=1)
+
+    df_unscored = df[df["score"].isna()].drop(columns=["score"])
+    df_scored = df[df["score"].notna()].copy()
+
+    y = df_scored["score"]
+    X = df_scored.drop(columns=["score", "apiname"])
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
@@ -377,17 +422,34 @@ def linear_regression():
     mae = mean_absolute_error(y_test, y_pred)
     print(f"MAE: {mae:.4f}")
 
+    X_unscored = df_unscored.drop(columns=["apiname"])
+    X_unscored_scaled = scaler.transform(X_unscored)
+    predicted_scores = model.predict(X_unscored_scaled)
+
+    df_unscored["score"] = predicted_scores
+    df_unscored["apiname"] = apiname[df_unscored.index]
+
+    df_scored_grouped = df_scored.groupby("apiname").mean().reset_index()
+
+    df = pd.concat([df_scored_grouped, df_unscored], axis=0)
+    df.sort_values(by="score", ascending=False, inplace=True)
+
+    df.to_csv(os.path.join(OUTPUT_DIR, "champion_data_predicted.csv"), index=False)
+
+    return df
+
 
 if __name__ == "__main__":
 
     # TODO - periodically?
-    download_champion_data(force_download=True)
-    prepare_champions()
+    # download_champion_data(force_download=True)
+    # prepare_champions()
 
-    # download_matches_data(gameName="julusia42069", tagLine="eune")
-    # prepare_matches()
+    download_matches_data(gameName="julusia42069", tagLine="eune", count=200)
+    prepare_matches()
 
     df, df_grouped = evaluate()
     print(df_grouped.head(50))
 
-    linear_regression()
+    df = linear_regression()
+    utils.print_df(df[["apiname", "score"]])
