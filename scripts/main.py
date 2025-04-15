@@ -48,6 +48,8 @@ class Match_type(Enum):
 
 REQUESTS_HISTORY_FILE = "requests_history.json"
 
+MATCHES_DATA = []
+
 
 def load_request_history() -> List[float]:
     if os.path.exists(REQUESTS_HISTORY_FILE):
@@ -125,7 +127,7 @@ def prepare_champions():
     df.to_csv(os.path.join(OUTPUT_DIR, "champion_data_prepared.csv"), index=False)
 
 
-def make_request(url: str) -> requests.Response:
+def make_request(url: str) -> requests.Response | None:
     print("Waiting...")
     while not can_make_request():
         time.sleep(0.1)
@@ -181,15 +183,13 @@ def get_matches(
     url = f"https://{region.name}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?type={type.name.lower()}&start={start}&count={count_param}&api_key={RIOT_KEY}"
     if match_ids_count < count:
         response = make_request(url)
-        if response.status_code == 200:
+        if response:
             match_ids = response.json()
             match_ids_count += len(match_ids)
             get_match_results(region=region, match_ids=match_ids, puuid=puuid)
             get_matches(
                 region, type, puuid, start + count_param, count, match_ids_count
             )
-        else:
-            print("Response:", response.text)
 
 
 def get_match_results(region: Match_region, match_ids: List[str], puuid: str) -> None:
@@ -200,22 +200,15 @@ def get_match_results(region: Match_region, match_ids: List[str], puuid: str) ->
             participants = response.json().get("info", {}).get("participants", [])
             for participant in participants:
                 if participant.get("puuid") == puuid:
-                    save_match_data(participant)
+                    MATCHES_DATA.append(participant)
+
         else:
             print("Response:", response.text)
 
 
-def save_match_data(match_data: Dict) -> None:
-    if os.path.exists(MATCHES_DATA_PATH) and os.path.getsize(MATCHES_DATA_PATH) > 0:
-        with open(MATCHES_DATA_PATH, "r") as f:
-            all_data = json.load(f)
-    else:
-        all_data = []
-
-    all_data.append(match_data)
-
+def save_matches_data() -> None:
     with open(MATCHES_DATA_PATH, "w") as f:
-        json.dump(all_data, f, indent=4)
+        json.dump(MATCHES_DATA, f, indent=4)
 
 
 def download_matches_data(
@@ -227,8 +220,6 @@ def download_matches_data(
     match_region: Match_region = Match_region.EUROPE,
     puuid_region: Puuid_region = Puuid_region.EUROPE,
 ):
-    if os.path.exists(MATCHES_DATA_PATH):
-        open(MATCHES_DATA_PATH, "w").close()
     puuid = get_puuid(region=puuid_region, gameName=gameName, tagLine=tagLine)
     get_matches(
         region=match_region,
@@ -237,6 +228,7 @@ def download_matches_data(
         start=start,
         count=count,
     )
+    save_matches_data(MATCHES_DATA)
 
 
 def prepare_matches():
@@ -450,7 +442,7 @@ if __name__ == "__main__":
     # download_champion_data(force_download=True)
     # prepare_champions()
 
-    # download_matches_data(gameName="julusia42069", tagLine="eune", count=2000)
+    download_matches_data(gameName="julusia42069", tagLine="eune", count=2000)
     prepare_matches()
 
     df, df_grouped = evaluate()
