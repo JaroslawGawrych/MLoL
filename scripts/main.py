@@ -1,6 +1,7 @@
 import time
 import pandas as pd
 import kagglehub
+from pymongo import UpdateOne
 import requests
 import os
 from ast import literal_eval
@@ -144,7 +145,6 @@ def prepare_champions():
             "Unnamed: 0",
             "client_positions",
             "external_positions",
-            "id",
             "date",
             "title",
             "patch",
@@ -173,7 +173,18 @@ def prepare_champions():
 
     df.to_csv(os.path.join(OUTPUT_DIR, "champion_data_prepared.csv"), index=False)
 
-    CHAMPIONS.insert_many(df.to_dict("records"))
+    operations = []
+    for record in df.to_dict("records"):
+        operations.append(
+            UpdateOne(
+                {"id": record["id"]},  # Use your unique key here
+                {"$set": record},
+                upsert=True,
+            )
+        )
+
+    if operations:
+        CHAMPIONS.bulk_write(operations)
 
 
 def make_request(url: str) -> requests.Response | None:
@@ -208,7 +219,9 @@ def can_make_request() -> bool:
     return True
 
 
-def get_puuid(region: Puuid_region, gameName: str, tagLine: str) -> str | None:
+def get_puuid(
+    gameName: str, tagLine: str, region: Puuid_region = Puuid_region.EUROPE
+) -> str | None:
     url = f"https://{region.name}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{gameName}/{tagLine}?api_key={RIOT_KEY}"
     response = make_request(url)
     if response.status_code == 200:
@@ -235,7 +248,7 @@ def get_matches(
         if response:
             match_ids = response.json()
             match_ids_count += len(match_ids)
-            get_match_results(region=region, match_ids=match_ids, puuid=puuid)
+            get_match_results(region=region, match_ids=match_ids)
             get_matches(
                 region, type, puuid, start + count_param, count, match_ids_count
             )
@@ -276,7 +289,9 @@ def download_matches_data(
     )
 
 
-def evaluate():
+def evaluate(gameName, tagLine):
+    puuid = get_puuid(gameName, tagLine)
+    MATCHES.aggregate([{"$match": {"info.participants.puuid": puuid}}])
 
     df = pd.read_json(MATCHES_DATA_PATH)
 
@@ -458,12 +473,12 @@ def test_db():
 if __name__ == "__main__":
 
     # TODO - periodically?
-    # download_champion_data(force_download=True)
+    download_champion_data(force_download=True)
     prepare_champions()
 
     download_matches_data(gameName="julusia42069", tagLine="eune", count=100)
 
-    df, df_grouped = evaluate()
+    df, df_grouped = evaluate(gameName="julusia42069", tagLine="eune")
     # print(df_grouped.head(50))
 
     # df = linear_regression()
