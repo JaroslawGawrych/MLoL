@@ -5,7 +5,7 @@ import requests
 import os
 from ast import literal_eval
 from enum import Enum
-from typing import List, Dict
+from typing import List
 import numpy as np
 import json
 from dotenv import load_dotenv
@@ -14,6 +14,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error
+from pymongo.mongo_client import MongoClient
+from pymongo.server_api import ServerApi
+
 
 OUTPUT_DIR = "data"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -23,6 +26,18 @@ MATCHES_DATA_PATH = os.path.join(OUTPUT_DIR, "matches_data.json")
 
 load_dotenv()
 RIOT_KEY = os.getenv("RIOT_KEY")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_USERNAME = os.getenv("DB_USERNAME")
+
+URI = (
+    f"mongodb+srv://{DB_USERNAME}:{DB_PASSWORD}@mlol.29bxhx8.mongodb.net/?appName=MLOL"
+)
+
+CLIENT = MongoClient(URI, server_api=ServerApi("1"))
+
+DB = CLIENT["MLOL"]
+MATCHES = DB["Matches"]
+CHAMPIONS = DB["Champions"]
 
 
 class Puuid_region(Enum):
@@ -124,13 +139,47 @@ def prepare_champions():
 
     df = df.join(df_role)
 
+    df.drop(
+        columns=[
+            "Unnamed: 0",
+            "client_positions",
+            "external_positions",
+            "id",
+            "date",
+            "title",
+            "patch",
+            "changes",
+            "be",
+            "rp",
+            "skill_i",
+            "skill_q",
+            "skill_w",
+            "skill_e",
+            "skill_r",
+            "skills",
+            "fullname",
+            "nickname",
+            "selection_radius",
+            "pathing_radius",
+            "selection_height",
+        ],
+        inplace=True,
+    )
+
+    df["apiname"] = df["apiname"].str.lower()
+
+    df_role = pd.json_normalize(df["role"])
+    df = df.drop(columns=["role"]).join(df_role)
+
     df.to_csv(os.path.join(OUTPUT_DIR, "champion_data_prepared.csv"), index=False)
+
+    CHAMPIONS.insert_many(df.to_dict("records"))
 
 
 def make_request(url: str) -> requests.Response | None:
     print("Waiting...")
     while not can_make_request():
-        time.sleep(0.1)
+        time.sleep(0.5)
     try:
         print("Fetching...")
         response = requests.get(url)
@@ -178,7 +227,7 @@ def get_matches(
     match_ids_count: int = 0,
 ) -> None:
     count_param = count
-    if count > 100:
+    if count >= 100:
         count_param = 100
     url = f"https://{region.name}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?type={type.name.lower()}&start={start}&count={count_param}&api_key={RIOT_KEY}"
     if match_ids_count < count:
@@ -192,34 +241,31 @@ def get_matches(
             )
 
 
-def get_match_results(region: Match_region, match_ids: List[str], puuid: str) -> None:
+def get_match_results(region: Match_region, match_ids: List[str]) -> None:
     for match_id in match_ids:
+        if MATCHES.find_one({"metadata.matchId": match_id}):
+            continue
         url = f"https://{region.name}.api.riotgames.com//lol/match/v5/matches/{match_id}?api_key={RIOT_KEY}"
         response = make_request(url)
         if response.status_code == 200:
-            participants = response.json().get("info", {}).get("participants", [])
-            for participant in participants:
-                if participant.get("puuid") == puuid:
-                    MATCHES_DATA.append(participant)
-
+            match_data = response.json()
+            MATCHES.insert_one(match_data)
         else:
             print("Response:", response.text)
-
-
-def save_matches_data() -> None:
-    with open(MATCHES_DATA_PATH, "w") as f:
-        json.dump(MATCHES_DATA, f, indent=4)
 
 
 def download_matches_data(
     gameName: str,
     tagLine: str,
     start: int = 0,
-    count: int = 99,
+    count: int = 100,
     match_type: Match_type = Match_type.RANKED,
     match_region: Match_region = Match_region.EUROPE,
     puuid_region: Puuid_region = Puuid_region.EUROPE,
 ):
+
+    count -= int(count / MAX_REQUESTS_PER_2_MINUTES)
+
     puuid = get_puuid(region=puuid_region, gameName=gameName, tagLine=tagLine)
     get_matches(
         region=match_region,
@@ -228,10 +274,9 @@ def download_matches_data(
         start=start,
         count=count,
     )
-    save_matches_data(MATCHES_DATA)
 
 
-def prepare_matches():
+def evaluate():
 
     df = pd.read_json(MATCHES_DATA_PATH)
 
@@ -246,11 +291,6 @@ def prepare_matches():
     df = df.drop(columns=["challenges"]).join(df_challenges)
 
     df.replace({True: 1, False: 0}, inplace=True)
-
-    df.to_csv(os.path.join(OUTPUT_DIR, "matches_data_prepared.csv"), index=False)
-
-
-def evaluate():
 
     df = pd.read_csv("data/matches_data_prepared.csv")
     df["champLevelPerMinute"] = df["champLevel"] / (df["timePlayed"] / 60)
@@ -337,33 +377,6 @@ def evaluate():
 
     champions = pd.read_csv("data/champion_data_prepared.csv")
 
-    champions.drop(
-        columns=[
-            "Unnamed: 0",
-            "client_positions",
-            "external_positions",
-            "id",
-            "date",
-            "title",
-            "patch",
-            "changes",
-            "be",
-            "rp",
-            "skill_i",
-            "skill_q",
-            "skill_w",
-            "skill_e",
-            "skill_r",
-            "skills",
-            "fullname",
-            "nickname",
-        ],
-        inplace=True,
-    )
-
-    df["championName"] = df["championName"].str.lower()
-    champions["apiname"] = champions["apiname"].str.lower()
-
     df.set_index("championName", inplace=True)
     champions.set_index("apiname", inplace=True)
 
@@ -386,8 +399,6 @@ def evaluate():
 
 def linear_regression():
     df = pd.read_csv("data/champion_data_scored.csv")
-    df_role = pd.json_normalize(df["role"])
-    df = df.drop(columns=["role"]).join(df_role)
 
     apiname = df["apiname"]
     df_features = df.drop(columns=["apiname"])
@@ -436,17 +447,26 @@ def linear_regression():
     return df
 
 
+def test_db():
+    try:
+        CLIENT.admin.command("ping")
+        print("Pinged your deployment. You successfully connected to MongoDB!")
+    except Exception as e:
+        print(e)
+
+
 if __name__ == "__main__":
 
     # TODO - periodically?
     # download_champion_data(force_download=True)
-    # prepare_champions()
+    prepare_champions()
 
-    download_matches_data(gameName="julusia42069", tagLine="eune", count=2000)
-    prepare_matches()
+    download_matches_data(gameName="julusia42069", tagLine="eune", count=100)
 
     df, df_grouped = evaluate()
-    print(df_grouped.head(50))
+    # print(df_grouped.head(50))
 
-    df = linear_regression()
-    utils.print_df(df[["apiname", "score"]])
+    # df = linear_regression()
+    # utils.print_df(df[["apiname", "score"]])
+
+    # test_db()
