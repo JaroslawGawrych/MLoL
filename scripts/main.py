@@ -497,13 +497,17 @@ def linear_regression(puuid: str) -> None:
     df = pd.concat([df.drop(columns=["result"]), result_df], axis=1)
 
     df.drop(columns=["_id", "id"], inplace=True)
+    pd.set_option("future.no_silent_downcasting", True)
+    df = df.replace({True: 1, False: 0})
 
-    metadata = df[["puuid", "apiname"]]
-    df_features = df.drop(columns=["puuid", "apiname"])
+    cat_cols = ["adaptivetype", "alttype", "herotype", "rangetype", "resource"]
 
-    df_features = pd.get_dummies(df_features)
-    df_features = df_features.replace({True: 1, False: 0})
-    df = pd.concat([metadata, df_features], axis=1)
+    df.drop(columns=cat_cols, inplace=True)
+
+    dummies = pd.get_dummies(cat_cols, drop_first=True)
+    dummies = dummies.replace({True: 1, False: 0}).astype("float32")
+
+    df.join(dummies)
 
     df_unscored = df[df["score"].isna()].drop(columns=["score"])
     df_scored = df[df["score"].notna()].copy()
