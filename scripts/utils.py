@@ -1,8 +1,8 @@
+from ast import Dict
 from typing import List
 import pandas as pd
 import os
 from ydata_profiling import ProfileReport
-import numpy as np
 import json
 
 
@@ -30,31 +30,9 @@ def print_df(df):
         print(df)
 
 
-def calculate_weights(df, group_by: str, target: str, excluded: List[str] = []):
-
-    excluded += [group_by, target]
-
-    cols = [col for col in df.columns if col not in excluded]
-
-    weights = {}
-
-    groups = df[group_by].unique()
-
-    for group in groups:
-
-        group_df = df[df[group_by] == group]
-
-        correlations = group_df[cols].corrwith(group_df[target])
-
-        correlations = correlations.fillna(0)
-
-        correlations = (correlations - correlations.min()) / (
-            correlations.max() - correlations.min()
-        )
-
-        weights[group] = correlations.to_dict()
-
-    with open("correlation_based_weights.json", "w") as f:
-        json.dump(weights, f, indent=4)
-
-    return weights
+def test_db(client):
+    try:
+        client.admin.command("ping")
+        print("Pinged your deployment. You successfully connected to MongoDB!")
+    except Exception as e:
+        print(e)

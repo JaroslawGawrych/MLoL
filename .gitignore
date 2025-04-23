@@ -170,5 +170,6 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-data
 visualizations
+requests_history.json
+correlation_based_weights.json

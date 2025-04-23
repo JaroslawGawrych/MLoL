@@ -6,7 +6,7 @@ import requests
 import os
 from ast import literal_eval
 from enum import Enum
-from typing import List
+from typing import Dict, List
 import numpy as np
 import json
 from dotenv import load_dotenv
@@ -86,7 +86,7 @@ MAX_REQUESTS_PER_SECOND = 20
 MAX_REQUESTS_PER_2_MINUTES = 100
 
 
-def download_champion_data(force_download: bool = False):
+def download_champion_data(force_download: bool = False) -> None:
 
     path = kagglehub.dataset_download(
         "laurenainsleyhaines/25-s1-3-league-of-legends-champion-data-2025",
@@ -225,12 +225,12 @@ def get_puuid(
 
 
 def get_matches(
-    region: Match_region,
-    type: Match_type,
     puuid: str,
-    start: int,
-    count: int,
+    start: int = 0,
+    count: int = MAX_REQUESTS_PER_2_MINUTES,
     match_ids_count: int = 0,
+    region: Match_region = Match_region.EUROPE,
+    type: Match_type = Match_type.RANKED,
 ) -> None:
     count_param = count
     if count >= 100:
@@ -243,11 +243,13 @@ def get_matches(
             match_ids_count += len(match_ids)
             get_match_results(region=region, match_ids=match_ids)
             get_matches(
-                region, type, puuid, start + count_param, count, match_ids_count
+                puuid, start + count_param, count, match_ids_count, region, type
             )
 
 
-def get_match_results(region: Match_region, match_ids: List[str]) -> None:
+def get_match_results(
+    match_ids: List[str], region: Match_region = Match_region.EUROPE
+) -> None:
     for match_id in match_ids:
         if MATCHES.find_one({"metadata.matchId": match_id}):
             continue
@@ -261,29 +263,59 @@ def get_match_results(region: Match_region, match_ids: List[str]) -> None:
 
 
 def download_matches_data(
-    gameName: str,
-    tagLine: str,
+    puuid: str,
     start: int = 0,
-    count: int = 100,
-    match_type: Match_type = Match_type.RANKED,
+    count: int = MAX_REQUESTS_PER_2_MINUTES,
     match_region: Match_region = Match_region.EUROPE,
-    puuid_region: Puuid_region = Puuid_region.EUROPE,
-):
+    match_type: Match_type = Match_type.RANKED,
+) -> None:
 
     count -= int(count / MAX_REQUESTS_PER_2_MINUTES)
 
-    puuid = get_puuid(region=puuid_region, gameName=gameName, tagLine=tagLine)
     get_matches(
+        puuid,
+        start,
+        count,
         region=match_region,
         type=match_type,
-        puuid=puuid,
-        start=start,
-        count=count,
     )
 
 
-def evaluate(gameName, tagLine):
-    puuid = get_puuid(gameName, tagLine)
+def calculate_weights(df, group_by: str, target: str, excluded: List[str] = []) -> Dict:
+
+    excluded += [group_by, target]
+
+    cols = [col for col in df.columns if col not in excluded]
+
+    weights = {}
+
+    groups = df[group_by].unique()
+
+    for group in groups:
+
+        group_df = df[df[group_by] == group]
+
+        non_constant_cols = [col for col in cols if group_df[col].std() != 0]
+        correlations = group_df[non_constant_cols].corrwith(group_df[target])
+
+        correlations = correlations.fillna(0)
+
+        correlations = (correlations - correlations.min()) / (
+            correlations.max() - correlations.min()
+        )
+
+        total = correlations.sum()
+        correlations = correlations / total
+
+        weights[group] = correlations.to_dict()
+
+    with open("correlation_based_weights.json", "w") as f:
+        json.dump(weights, f, indent=4)
+
+    return weights
+
+
+def evaluate(puuid: str) -> None:
     cursor = list(
         MATCHES.aggregate(
             [
@@ -318,9 +350,8 @@ def evaluate(gameName, tagLine):
         },
         inplace=True,
     )
-    df = df.drop(columns=["challenges"], inplace=True)
+    df = df.drop(columns=["challenges"]).join(df_challenges)
 
-    df = pd.read_csv("data/matches_data_prepared.csv")
     df["champLevelPerMinute"] = df["champLevel"] / (df["timePlayed"] / 60)
     df["damageDealtToBuildingsPerMinute"] = df["damageDealtToBuildings"] / (
         df["timePlayed"] / 60
@@ -375,7 +406,7 @@ def evaluate(gameName, tagLine):
         if col not in ["championName", "teamPosition", "championId"]
     ]
 
-    weights = utils.calculate_weights(
+    weights = calculate_weights(
         df,
         group_by="teamPosition",
         target="win",
@@ -388,17 +419,17 @@ def evaluate(gameName, tagLine):
             if not pd.isna(row[col]):
                 teamPosition = row["teamPosition"]
                 if teamPosition == "TOP":
-                    weight = weights["TOP"].get(col, 1.0)
+                    weight = weights["TOP"].get(col, 0.0625)
                 elif teamPosition == "JUNGLE":
-                    weight = weights["JUNGLE"].get(col, 1.0)
+                    weight = weights["JUNGLE"].get(col, 0.0625)
                 elif teamPosition == "MIDDLE":
-                    weight = weights["MIDDLE"].get(col, 1.0)
+                    weight = weights["MIDDLE"].get(col, 0.0625)
                 elif teamPosition == "BOTTOM":
-                    weight = weights["BOTTOM"].get(col, 1.0)
+                    weight = weights["BOTTOM"].get(col, 0.0625)
                 elif teamPosition == "UTILITY":
-                    weight = weights["UTILITY"].get(col, 1.0)
+                    weight = weights["UTILITY"].get(col, 0.0625)
                 else:
-                    weight = 1.0
+                    weight = 0.0625
                 df.at[index, "score"] += row[col] * weight
 
     games_count = df[["championName", "teamPosition"]].value_counts().reset_index()
@@ -437,9 +468,7 @@ def evaluate(gameName, tagLine):
         SCORES.bulk_write(operations)
 
 
-def linear_regression(gameName, tagLine):
-
-    puuid = get_puuid(gameName, tagLine)
+def linear_regression(puuid: str) -> None:
 
     cursor = list(
         SCORES.aggregate(
@@ -524,16 +553,7 @@ def linear_regression(gameName, tagLine):
         SCORES.bulk_write(operations)
 
 
-def test_db():
-    try:
-        CLIENT.admin.command("ping")
-        print("Pinged your deployment. You successfully connected to MongoDB!")
-    except Exception as e:
-        print(e)
-
-
-def get_scores(gameName, tagLine):
-    puuid = get_puuid(gameName, tagLine)
+def get_scores(puuid: str) -> pd.DataFrame:
 
     cursor = list(
         SCORES.aggregate(
@@ -569,19 +589,34 @@ def get_scores(gameName, tagLine):
     return df
 
 
+def run_that_bad_boy(
+    gameName,
+    tagLine,
+    count: int = MAX_REQUESTS_PER_2_MINUTES,
+    start: int = 0,
+    puuid_region: Puuid_region = Puuid_region.EUROPE,
+    match_region: Match_region = Match_region.EUROPE,
+    match_type: Match_type = Match_type.RANKED,
+    force_download: bool = False,
+) -> pd.DataFrame:
+
+    download_champion_data(force_download=force_download)
+
+    puuid = get_puuid(gameName, tagLine, puuid_region)
+
+    download_matches_data(puuid, start, count, match_region, match_type)
+
+    evaluate(puuid)
+
+    linear_regression(puuid)
+
+    df = get_scores(puuid)
+
+    return df
+
+
 if __name__ == "__main__":
 
-    # test_db()
+    # utils.test_db(CLIENT)
 
-    # TODO - periodically?
-    # download_champion_data(force_download=True)
-
-    # download_matches_data(gameName="julusia42069", tagLine="eune", count=100)
-
-    # evaluate(gameName="julusia42069", tagLine="eune")
-
-    # linear_regression(gameName="julusia42069", tagLine="eune")
-
-    utils.print_df(get_scores(gameName="julusia42069", tagLine="eune"))
-
-    # test_db()
+    utils.print_df(run_that_bad_boy("julusia42069", "eune"))
