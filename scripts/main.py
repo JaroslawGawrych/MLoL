@@ -39,6 +39,7 @@ CLIENT = MongoClient(URI, server_api=ServerApi("1"))
 DB = CLIENT["MLOL"]
 MATCHES = DB["Matches"]
 CHAMPIONS = DB["Champions"]
+SCORES = DB["Scores"]
 
 
 class Puuid_region(Enum):
@@ -95,12 +96,6 @@ def download_champion_data(force_download: bool = False):
 
     for file_name in os.listdir(path):
         df = pd.read_csv(os.path.join(path, file_name))
-        df.to_csv(os.path.join(OUTPUT_DIR, "champion_data.csv"), index=False)
-
-
-def prepare_champions():
-
-    df = pd.read_csv("data/champion_data.csv")
 
     df["stats"] = df["stats"].apply(literal_eval)
     df_stats = pd.json_normalize(df["stats"])
@@ -171,13 +166,11 @@ def prepare_champions():
     df_role = pd.json_normalize(df["role"])
     df = df.drop(columns=["role"]).join(df_role)
 
-    df.to_csv(os.path.join(OUTPUT_DIR, "champion_data_prepared.csv"), index=False)
-
     operations = []
     for record in df.to_dict("records"):
         operations.append(
             UpdateOne(
-                {"id": record["id"]},  # Use your unique key here
+                {"id": record["id"]},
                 {"$set": record},
                 upsert=True,
             )
@@ -291,9 +284,31 @@ def download_matches_data(
 
 def evaluate(gameName, tagLine):
     puuid = get_puuid(gameName, tagLine)
-    MATCHES.aggregate([{"$match": {"info.participants.puuid": puuid}}])
+    cursor = list(
+        MATCHES.aggregate(
+            [
+                {"$match": {"info.participants.puuid": puuid}},
+                {
+                    "$project": {
+                        "participant": {
+                            "$arrayElemAt": [
+                                {
+                                    "$filter": {
+                                        "input": "$info.participants",
+                                        "as": "p",
+                                        "cond": {"$eq": ["$$p.puuid", puuid]},
+                                    }
+                                },
+                                0,
+                            ]
+                        }
+                    }
+                },
+            ]
+        )
+    )
 
-    df = pd.read_json(MATCHES_DATA_PATH)
+    df = pd.DataFrame([doc["participant"] for doc in cursor if "participant" in doc])
 
     df_challenges = pd.json_normalize(df["challenges"])
     df_challenges.rename(
@@ -303,9 +318,7 @@ def evaluate(gameName, tagLine):
         },
         inplace=True,
     )
-    df = df.drop(columns=["challenges"]).join(df_challenges)
-
-    df.replace({True: 1, False: 0}, inplace=True)
+    df = df.drop(columns=["challenges"], inplace=True)
 
     df = pd.read_csv("data/matches_data_prepared.csv")
     df["champLevelPerMinute"] = df["champLevel"] / (df["timePlayed"] / 60)
@@ -331,6 +344,7 @@ def evaluate(gameName, tagLine):
 
     df = df[
         [
+            "championId",
             "championName",
             "win",
             "kda",
@@ -355,17 +369,18 @@ def evaluate(gameName, tagLine):
 
     df.dropna(axis=0, inplace=True)
 
-    df_ungrouped = df
-
-    cols = [col for col in df.columns if col not in ["championName", "teamPosition"]]
+    cols = [
+        col
+        for col in df.columns
+        if col not in ["championName", "teamPosition", "championId"]
+    ]
 
     weights = utils.calculate_weights(
-        df_ungrouped,
+        df,
         group_by="teamPosition",
         target="win",
-        excluded=["championName"],
+        excluded=["championName", "championId"],
     )
-    # weights = pd.read_json("weights.json")
 
     df["score"] = 0.0
     for index, row in df.iterrows():
@@ -387,47 +402,85 @@ def evaluate(gameName, tagLine):
                 df.at[index, "score"] += row[col] * weight
 
     games_count = df[["championName", "teamPosition"]].value_counts().reset_index()
-    df_grouped = df.groupby(["championName", "teamPosition"]).mean().reset_index()
-    df_grouped = df_grouped.merge(games_count, on=["championName", "teamPosition"])
+    df = df.groupby(["championName", "teamPosition"]).mean().reset_index()
+    df = df.merge(games_count, on=["championName", "teamPosition"])
 
-    champions = pd.read_csv("data/champion_data_prepared.csv")
+    cursor = list(CHAMPIONS.aggregate([]))
 
-    df.set_index("championName", inplace=True)
-    champions.set_index("apiname", inplace=True)
+    champions = pd.json_normalize(cursor)
 
-    df.to_csv(os.path.join(OUTPUT_DIR, "matches_data_scored.csv"), index=False)
+    df.set_index("championId", inplace=True)
+    champions.set_index("id", inplace=True)
 
-    df = champions.join(df[["score"]])
+    df = champions.join(df)
 
     df.reset_index(inplace=True)
 
-    df.sort_values(by="score", ascending=False, inplace=True)
-    df_grouped.sort_values(by="score", ascending=False, inplace=True)
+    df["count"] = df["count"].fillna(0)
 
-    df.to_csv(os.path.join(OUTPUT_DIR, "champion_data_scored.csv"), index=False)
-    df_grouped.to_csv(
-        os.path.join(OUTPUT_DIR, "matches_data_scored_grouped.csv"), index=False
+    operations = []
+    for record in df.to_dict("records"):
+        operations.append(
+            UpdateOne(
+                {"puuid": puuid, "championId": record["id"]},
+                {
+                    "$set": {
+                        "score": record["score"],
+                        "count": record["count"],
+                    }
+                },
+                upsert=True,
+            )
+        )
+
+    if operations:
+        SCORES.bulk_write(operations)
+
+
+def linear_regression(gameName, tagLine):
+
+    puuid = get_puuid(gameName, tagLine)
+
+    cursor = list(
+        SCORES.aggregate(
+            [
+                {"$match": {"puuid": puuid}},
+                {
+                    "$lookup": {
+                        "from": "Champions",
+                        "localField": "championId",
+                        "foreignField": "id",
+                        "as": "result",
+                    }
+                },
+            ]
+        )
+    )
+    df = pd.DataFrame(cursor)
+
+    df.drop(columns="_id", inplace=True)
+
+    df["result"] = df["result"].apply(
+        lambda x: x[0] if isinstance(x, list) and x else {}
     )
 
-    return df, df_grouped
+    result_df = pd.json_normalize(df["result"])
+    df = pd.concat([df.drop(columns=["result"]), result_df], axis=1)
 
+    df.drop(columns=["_id", "id"], inplace=True)
 
-def linear_regression():
-    df = pd.read_csv("data/champion_data_scored.csv")
-
-    apiname = df["apiname"]
-    df_features = df.drop(columns=["apiname"])
+    metadata = df[["puuid", "apiname"]]
+    df_features = df.drop(columns=["puuid", "apiname"])
 
     df_features = pd.get_dummies(df_features)
-    df_features.replace({True: 1, False: 0}, inplace=True)
-
-    df = pd.concat([apiname, df_features], axis=1)
+    df_features = df_features.replace({True: 1, False: 0})
+    df = pd.concat([metadata, df_features], axis=1)
 
     df_unscored = df[df["score"].isna()].drop(columns=["score"])
     df_scored = df[df["score"].notna()].copy()
 
     y = df_scored["score"]
-    X = df_scored.drop(columns=["score", "apiname"])
+    X = df_scored.drop(columns=["score", "apiname", "championId", "puuid"])
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
@@ -445,21 +498,30 @@ def linear_regression():
     mae = mean_absolute_error(y_test, y_pred)
     print(f"MAE: {mae:.4f}")
 
-    X_unscored = df_unscored.drop(columns=["apiname"])
+    X_unscored = df_unscored.drop(columns=["apiname", "championId", "puuid"])
+
     X_unscored_scaled = scaler.transform(X_unscored)
     predicted_scores = model.predict(X_unscored_scaled)
 
     df_unscored["score"] = predicted_scores
-    df_unscored["apiname"] = apiname[df_unscored.index]
 
-    df_scored_grouped = df_scored.groupby("apiname").mean().reset_index()
+    operations = []
+    for record in df_unscored.to_dict("records"):
+        operations.append(
+            UpdateOne(
+                {"puuid": puuid, "championId": record["championId"]},
+                {
+                    "$set": {
+                        "score": record["score"],
+                        "count": 0,
+                    }
+                },
+                upsert=True,
+            )
+        )
 
-    df = pd.concat([df_scored_grouped, df_unscored], axis=0)
-    df.sort_values(by="score", ascending=False, inplace=True)
-
-    df.to_csv(os.path.join(OUTPUT_DIR, "champion_data_predicted.csv"), index=False)
-
-    return df
+    if operations:
+        SCORES.bulk_write(operations)
 
 
 def test_db():
@@ -470,18 +532,56 @@ def test_db():
         print(e)
 
 
+def get_scores(gameName, tagLine):
+    puuid = get_puuid(gameName, tagLine)
+
+    cursor = list(
+        SCORES.aggregate(
+            [
+                {"$match": {"puuid": puuid}},
+                {
+                    "$lookup": {
+                        "from": "Champions",
+                        "localField": "championId",
+                        "foreignField": "id",
+                        "as": "result",
+                    }
+                },
+            ]
+        )
+    )
+
+    df = pd.DataFrame(cursor)
+
+    df.drop(columns="_id", inplace=True)
+
+    df["result"] = df["result"].apply(
+        lambda x: x[0] if isinstance(x, list) and x else {}
+    )
+
+    result_df = pd.json_normalize(df["result"])
+    df = pd.concat([df.drop(columns=["result"]), result_df], axis=1)
+
+    df = df[["apiname", "score", "count"]]
+
+    df.sort_values(by="score", ascending=False, inplace=True)
+
+    return df
+
+
 if __name__ == "__main__":
 
+    # test_db()
+
     # TODO - periodically?
-    download_champion_data(force_download=True)
-    prepare_champions()
+    # download_champion_data(force_download=True)
 
-    download_matches_data(gameName="julusia42069", tagLine="eune", count=100)
+    # download_matches_data(gameName="julusia42069", tagLine="eune", count=100)
 
-    df, df_grouped = evaluate(gameName="julusia42069", tagLine="eune")
-    # print(df_grouped.head(50))
+    # evaluate(gameName="julusia42069", tagLine="eune")
 
-    # df = linear_regression()
-    # utils.print_df(df[["apiname", "score"]])
+    # linear_regression(gameName="julusia42069", tagLine="eune")
+
+    utils.print_df(get_scores(gameName="julusia42069", tagLine="eune"))
 
     # test_db()
