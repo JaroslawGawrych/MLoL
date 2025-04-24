@@ -19,13 +19,7 @@ from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 
 
-OUTPUT_DIR = "data"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-MATCHES_DATA_PATH = os.path.join(OUTPUT_DIR, "matches_data.json")
-
-
-load_dotenv()
+load_dotenv(override=True)
 RIOT_KEY = os.getenv("RIOT_KEY")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 DB_USERNAME = os.getenv("DB_USERNAME")
@@ -64,8 +58,6 @@ class Match_type(Enum):
 
 
 REQUESTS_HISTORY_FILE = "requests_history.json"
-
-MATCHES_DATA = []
 
 
 def load_request_history() -> List[float]:
@@ -300,9 +292,11 @@ def calculate_weights(df, group_by: str, target: str, excluded: List[str] = []) 
 
         correlations = correlations.fillna(0)
 
-        correlations = (correlations - correlations.min()) / (
-            correlations.max() - correlations.min()
-        )
+        range_val = correlations.max() - correlations.min()
+        if range_val == 0:
+            correlations[:] = 1.0 / len(correlations)
+        else:
+            correlations = (correlations - correlations.min()) / range_val
 
         total = correlations.sum()
         correlations = correlations / total
@@ -419,22 +413,33 @@ def evaluate(puuid: str) -> None:
             if not pd.isna(row[col]):
                 teamPosition = row["teamPosition"]
                 if teamPosition == "TOP":
-                    weight = weights["TOP"].get(col, 0.0625)
+                    weight = weights["TOP"].get(col, 0.0)
                 elif teamPosition == "JUNGLE":
-                    weight = weights["JUNGLE"].get(col, 0.0625)
+                    weight = weights["JUNGLE"].get(col, 0.0)
                 elif teamPosition == "MIDDLE":
-                    weight = weights["MIDDLE"].get(col, 0.0625)
+                    weight = weights["MIDDLE"].get(col, 0.0)
                 elif teamPosition == "BOTTOM":
-                    weight = weights["BOTTOM"].get(col, 0.0625)
+                    weight = weights["BOTTOM"].get(col, 0.0)
                 elif teamPosition == "UTILITY":
-                    weight = weights["UTILITY"].get(col, 0.0625)
+                    weight = weights["UTILITY"].get(col, 0.0)
                 else:
-                    weight = 0.0625
-                df.at[index, "score"] += row[col] * weight
+                    weight = 0.0
+                if not np.isnan(weight):
+                    df.at[index, "score"] += row[col] * weight
 
     games_count = df[["championName", "teamPosition"]].value_counts().reset_index()
     df = df.groupby(["championName", "teamPosition"]).mean().reset_index()
     df = df.merge(games_count, on=["championName", "teamPosition"])
+
+    df = df.replace(
+        {
+            "UTILITY": "Support",
+            "TOP": "Top",
+            "JUNGLE": "Jungle",
+            "MIDDLE": "Middle",
+            "BOTTOM": "Bottom",
+        }
+    )
 
     cursor = list(CHAMPIONS.aggregate([]))
 
@@ -453,7 +458,11 @@ def evaluate(puuid: str) -> None:
     for record in df.to_dict("records"):
         operations.append(
             UpdateOne(
-                {"puuid": puuid, "championId": record["id"]},
+                {
+                    "puuid": puuid,
+                    "championId": record["id"],
+                    "teamPosition": record["teamPosition"],
+                },
                 {
                     "$set": {
                         "score": record["score"],
@@ -513,7 +522,9 @@ def linear_regression(puuid: str) -> None:
     df_scored = df[df["score"].notna()].copy()
 
     y = df_scored["score"]
-    X = df_scored.drop(columns=["score", "apiname", "championId", "puuid"])
+    X = df_scored.drop(
+        columns=["score", "apiname", "championId", "puuid", "teamPosition"]
+    )
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
@@ -531,7 +542,9 @@ def linear_regression(puuid: str) -> None:
     mae = mean_absolute_error(y_test, y_pred)
     print(f"MAE: {mae:.4f}")
 
-    X_unscored = df_unscored.drop(columns=["apiname", "championId", "puuid"])
+    X_unscored = df_unscored.drop(
+        columns=["apiname", "championId", "puuid", "teamPosition"]
+    )
 
     X_unscored_scaled = scaler.transform(X_unscored)
     predicted_scores = model.predict(X_unscored_scaled)
@@ -542,7 +555,11 @@ def linear_regression(puuid: str) -> None:
     for record in df_unscored.to_dict("records"):
         operations.append(
             UpdateOne(
-                {"puuid": puuid, "championId": record["championId"]},
+                {
+                    "puuid": puuid,
+                    "championId": record["championId"],
+                    "teamPosition": record["teamPosition"],
+                },
                 {
                     "$set": {
                         "score": record["score"],
@@ -557,7 +574,7 @@ def linear_regression(puuid: str) -> None:
         SCORES.bulk_write(operations)
 
 
-def get_scores(puuid: str) -> pd.DataFrame:
+def get_scores(puuid: str) -> Dict:
 
     cursor = list(
         SCORES.aggregate(
@@ -571,26 +588,33 @@ def get_scores(puuid: str) -> pd.DataFrame:
                         "as": "result",
                     }
                 },
+                {"$group": {"_id": "$teamPosition", "entries": {"$push": "$$ROOT"}}},
             ]
         )
     )
 
-    df = pd.DataFrame(cursor)
+    grouped_dfs = {}
 
-    df.drop(columns="_id", inplace=True)
+    for group in cursor:
+        team_position = group["_id"]
+        entries = group["entries"]
 
-    df["result"] = df["result"].apply(
-        lambda x: x[0] if isinstance(x, list) and x else {}
-    )
+        df = pd.DataFrame(entries)
 
-    result_df = pd.json_normalize(df["result"])
-    df = pd.concat([df.drop(columns=["result"]), result_df], axis=1)
+        df["result"] = df["result"].apply(
+            lambda x: x[0] if isinstance(x, list) and x else {}
+        )
 
-    df = df[["apiname", "score", "count"]]
+        result_df = pd.json_normalize(df["result"])
+        df = pd.concat([df.drop(columns=["result"]), result_df], axis=1)
 
-    df.sort_values(by="score", ascending=False, inplace=True)
+        df = df[["apiname", "score", "count", "teamPosition"]]
 
-    return df
+        df.sort_values(by="score", ascending=False, inplace=True)
+
+        grouped_dfs[team_position] = df
+
+    return grouped_dfs
 
 
 def run_that_bad_boy(
@@ -623,4 +647,6 @@ if __name__ == "__main__":
 
     # utils.test_db(CLIENT)
 
-    utils.print_df(run_that_bad_boy("julusia42069", "eune"))
+    grouped_dfs = run_that_bad_boy("julusia42069", "eune")
+    for group in grouped_dfs:
+        utils.print_df(grouped_dfs[group])
