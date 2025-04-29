@@ -220,28 +220,28 @@ def get_matches(
     puuid: str,
     start: int = 0,
     count: int = MAX_REQUESTS_PER_2_MINUTES,
-    match_ids_count: int = 0,
     region: Match_region = Match_region.EUROPE,
     type: Match_type = Match_type.RANKED,
+    all_writes: int = 0,
 ) -> None:
+    count -= 1
     count_param = count
     if count >= 100:
         count_param = 100
     url = f"https://{region.name}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?type={type.name.lower()}&start={start}&count={count_param}&api_key={RIOT_KEY}"
-    if match_ids_count < count:
+    if all_writes < count:
         response = make_request(url)
         if response:
             match_ids = response.json()
-            match_ids_count += len(match_ids)
-            get_match_results(region=region, match_ids=match_ids)
-            get_matches(
-                puuid, start + count_param, count, match_ids_count, region, type
-            )
+            writes = get_match_results(region=region, match_ids=match_ids)
+            all_writes += writes
+            get_matches(puuid, start + count_param, count, region, type, all_writes)
 
 
 def get_match_results(
     match_ids: List[str], region: Match_region = Match_region.EUROPE
-) -> None:
+) -> int:
+    writes = 0
     for match_id in match_ids:
         if MATCHES.find_one({"metadata.matchId": match_id}):
             continue
@@ -250,27 +250,10 @@ def get_match_results(
         if response.status_code == 200:
             match_data = response.json()
             MATCHES.insert_one(match_data)
+            writes += 1
         else:
             print("Response:", response.text)
-
-
-def download_matches_data(
-    puuid: str,
-    start: int = 0,
-    count: int = MAX_REQUESTS_PER_2_MINUTES,
-    match_region: Match_region = Match_region.EUROPE,
-    match_type: Match_type = Match_type.RANKED,
-) -> None:
-
-    count -= int(count / MAX_REQUESTS_PER_2_MINUTES)
-
-    get_matches(
-        puuid,
-        start,
-        count,
-        region=match_region,
-        type=match_type,
-    )
+    return writes
 
 
 def calculate_weights(df, group_by: str, target: str, excluded: List[str] = []) -> Dict:
@@ -477,7 +460,7 @@ def evaluate(puuid: str) -> None:
         SCORES.bulk_write(operations)
 
 
-def linear_regression(puuid: str) -> None:
+def linear_regression(puuid: str, min_count: int = 0) -> None:
 
     cursor = list(
         SCORES.aggregate(
@@ -520,6 +503,8 @@ def linear_regression(puuid: str) -> None:
 
     df_unscored = df[df["score"].isna()].drop(columns=["score"])
     df_scored = df[df["score"].notna()].copy()
+
+    df_scored = df_scored[df_scored["count"] >= min_count]
 
     y = df_scored["score"]
     X = df_scored.drop(
@@ -620,23 +605,30 @@ def get_scores(puuid: str) -> Dict:
 def run_that_bad_boy(
     gameName,
     tagLine,
-    count: int = MAX_REQUESTS_PER_2_MINUTES,
+    count: int = MAX_REQUESTS_PER_2_MINUTES - 1,
     start: int = 0,
     puuid_region: Puuid_region = Puuid_region.EUROPE,
     match_region: Match_region = Match_region.EUROPE,
     match_type: Match_type = Match_type.RANKED,
     force_download: bool = False,
+    min_count: int = 0,
 ) -> pd.DataFrame:
 
     download_champion_data(force_download=force_download)
 
     puuid = get_puuid(gameName, tagLine, puuid_region)
 
-    download_matches_data(puuid, start, count, match_region, match_type)
+    get_matches(
+        puuid,
+        start,
+        count,
+        match_region,
+        match_type,
+    )
 
     evaluate(puuid)
 
-    linear_regression(puuid)
+    linear_regression(puuid, min_count)
 
     df = get_scores(puuid)
 
@@ -647,6 +639,6 @@ if __name__ == "__main__":
 
     # utils.test_db(CLIENT)
 
-    grouped_dfs = run_that_bad_boy("julusia42069", "eune")
+    grouped_dfs = run_that_bad_boy("aight bet", "eune", min_count=2)
     for group in grouped_dfs:
         utils.print_df(grouped_dfs[group])
